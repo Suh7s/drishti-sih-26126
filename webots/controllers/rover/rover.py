@@ -1,5 +1,6 @@
 """Non-supervisor controller: only paired RGB frames enter navigation."""
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -21,17 +22,19 @@ for c in cams:
 motors = [robot.getDevice(n) for n in ('front_left','rear_left','front_right','rear_right')]
 for m in motors:
     m.setPosition(float('inf')); m.setVelocity(0)
-out = ROOT/'results/webots_latest'
+settings=json.loads(Path(os.environ['DRISHTI_CONFIG']).read_text()) if os.environ.get('DRISHTI_CONFIG') else {}
+out = Path(settings.get('output',ROOT/'results/webots_latest'))
 out.mkdir(parents=True, exist_ok=True)
 f = 640/(2*np.tan(1.4/2))
 cal = Calibration(f,f,320,200,.16,640,400)
 nav = CameraNavigation(cal, goal=(8,0), initial_base_height=.13,
     mount=camera_mount(height=.62,forward=.29,left=.08,pitch_degrees=45),
-    config=Config(radius=.42,margin=.08,max_speed=.25,max_yaw_rate=.45,goal_tolerance=.35,
+    config=Config(radius=.46,margin=.16,max_speed=.25,max_yaw_rate=.45,goal_tolerance=.35,
                   support_max_age=float('inf')))
 # Ground support persists in this explicitly static, flat course. New occupied
 # evidence still overrides it. This is not validation of dynamic obstacles.
 log = (out/'navigation.jsonl').open('w', buffering=1)
+video = cv2.VideoWriter(str(out/'perception.mp4'),cv2.VideoWriter_fourcc(*'mp4v'),1000/(step*3),(1280,400)) if settings.get('record') else None
 frame = 0
 try:
     while robot.step(step) != -1:
@@ -48,6 +51,12 @@ try:
         v,_,w=command
         wheel=[(v-w*.46/2)/.13]*2+[(v+w*.46/2)/.13]*2
         for m,value in zip(motors,wheel): m.setVelocity(float(value))
+        if video is not None:
+            rgb=cv2.cvtColor(images[0],cv2.COLOR_RGB2BGR)
+            valid=np.isfinite(depth)
+            d8=np.uint8(np.clip(np.nan_to_num(depth,nan=0)/5,0,1)*255)
+            heat=cv2.applyColorMap(d8,cv2.COLORMAP_TURBO);heat[~valid]=[17,23,27]
+            video.write(np.hstack([rgb,heat]))
         if frame%10==0:
             print(f"DRISHTI {row['t']:.1f}s {row['state']} {row['pose'][:2]} q={row['quality']:.2f} {row['reason']}",flush=True)
             cv2.imwrite(str(out/'left.jpg'),cv2.cvtColor(images[0],cv2.COLOR_RGB2BGR))
@@ -57,9 +66,11 @@ try:
             (out/'state.json').write_text(json.dumps(row))
         frame+=1
         if row['state']=='ARRIVED':
+            (out/'complete.json').write_text(json.dumps(row))
             print('DRISHTI estimated goal reached',flush=True)
             break
 finally:
     for m in motors: m.setVelocity(0)
     log.close()
+    if video is not None: video.release()
 while robot.step(step)!=-1: pass

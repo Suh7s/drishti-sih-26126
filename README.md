@@ -38,6 +38,12 @@ Validated: flat static course, known initial pose and checked launch pad, classi
 stereo and visual odometry. Not yet demonstrated: learned semantic perception,
 loop-closing SLAM, rough terrain, dynamic obstacles or physical hardware.
 
-The `isaac/` adapter and older `results/isaac_*` folders are experimental history.
-They do not establish successful Spot navigation. The existing `demo/` viewer is
-an older synthetic planning replay; it is not footage of the Webots run.
+The `isaac/` adapter and [archive](archive/) preserve earlier experiments.
+They do not establish successful Spot navigation.
+
+## Submission scene
+
+The detailed forest run also passed: **62.784 s**, **1.21 cm position RMSE**,
+and **37.83 cm conservative obstacle clearance**. See
+[the complete recorded evidence](results/submission_run/).
+The synchronised movie and replay viewer are being packaged in the next update.

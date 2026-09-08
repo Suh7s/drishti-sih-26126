@@ -1,0 +1,16 @@
+{
+  "output": "results/submission_run",
+  "record": true,
+  "exit": true,
+  "world": "drishti",
+  "time_limit": 120,
+  "camera_hz": 10.416666666666666,
+  "goal": [
+    8,
+    0
+  ],
+  "seed": 26126,
+  "sensor_input": "rectified RGB pair",
+  "ground_support": "persistent; static course assumption",
+  "python": "3.13.7"
+}

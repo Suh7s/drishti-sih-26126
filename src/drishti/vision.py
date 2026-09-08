@@ -114,6 +114,9 @@ class VisualOdometry:
             return self.T.copy(),0.0,"LOST"
         back, bs, _ = cv2.calcOpticalFlowPyrLK(g,self.anchor_gray,p1,None,
                                             winSize=(21,21),maxLevel=3)
+        if back is None or bs is None:
+            self.quality = 0.0
+            return self.T.copy(), 0.0, "LOST"
         uv0, uv1 = p0.reshape(-1,2),p1.reshape(-1,2)
         valid = (status.ravel()==1)&(bs.ravel()==1)&(np.linalg.norm(back.reshape(-1,2)-uv0,axis=1)<1.0)
         px = np.rint(uv0).astype(int)
@@ -153,7 +156,7 @@ class GroundMapper:
         world = np.einsum('ij,kj->ik',points,T_world_camera[:3,:3])+T_world_camera[:3,3]
         cells = np.floor((world[:,:2]-self.grid.origin)/self.grid.resolution).astype(int)
         valid = (cells[:,0]>=0)&(cells[:,0]<self.grid.width)&(cells[:,1]>=0)&(cells[:,1]<self.grid.height)
-        cells,world = cells[valid],world[valid]
+        cells,world,uv = cells[valid],world[valid],uv[valid]
         shape = self.grid.occupied.shape
         support,obstacle = np.zeros(shape,int),np.zeros(shape,int)
         z = world[:,2]-self.ground_z
@@ -175,7 +178,10 @@ class GroundMapper:
         # Persistent obstacle evidence is conservative; dynamic clearing is future work.
         self.grid.occupied |= occ
         self.grid.risk[seen] = np.clip(1.0-support[seen]/25,0,1)*0.25
-        ground_z = z[ground]
+        # Select the diagnostic region in image coordinates, without filtering
+        # for agreement with the assumed plane (which would make this circular).
+        launch_region=(uv[:,1]>.55*self.c.height)&(np.abs(uv[:,0]-self.c.cx)<.3*self.c.width)
+        ground_z = z[launch_region]
         # This is an image-derived check of the declared flat launch-pad prior.
         # It is diagnostic only: it never changes the assumed plane or VO pose.
         return {"support_cells":int(seen.sum()),"hazard_cells":int(occ.sum()),

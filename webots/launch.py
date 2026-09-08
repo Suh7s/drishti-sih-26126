@@ -1,5 +1,7 @@
-"""Configure Python and launch the project on macOS or Linux."""
+"""Configure an isolated run and launch Webots on macOS or Linux."""
 import argparse
+from datetime import datetime
+import json
 import os
 from pathlib import Path
 import shutil
@@ -7,23 +9,38 @@ import subprocess
 import sys
 
 HERE=Path(__file__).resolve().parent
-parser=argparse.ArgumentParser()
-parser.add_argument('--webots',help='Webots executable or macOS .app path')
-parser.add_argument('--prepare-only',action='store_true')
-args=parser.parse_args()
-import numpy,cv2  # Fail before launching if this interpreter lacks dependencies.
-for controller in ('rover','evaluator'):
-    (HERE/'controllers'/controller/'runtime.ini').write_text('[python]\nCOMMAND = '+sys.executable+'\n')
-world=HERE/'worlds/drishti.wbt'
-if args.prepare_only:
-    print('Ready. Open:',world);sys.exit(0)
-candidates=[args.webots,os.environ.get('WEBOTS_HOME'),'/Applications/Webots.app',
+p=argparse.ArgumentParser(description=__doc__)
+p.add_argument('--webots',help='Webots executable or macOS .app path')
+p.add_argument('--prepare-only',action='store_true')
+p.add_argument('--world',choices=['drishti','benchmark'],default='drishti')
+p.add_argument('--record',action='store_true')
+p.add_argument('--fast',action='store_true')
+p.add_argument('--exit',action='store_true',help='Close simulator after evaluation')
+p.add_argument('--output',type=Path)
+p.add_argument('--time-limit',type=float,default=120)
+a=p.parse_args()
+import numpy,cv2
+for c in ('rover','evaluator'):
+    (HERE/'controllers'/c/'runtime.ini').write_text('[python]\nCOMMAND = '+sys.executable+'\n')
+world=HERE/'worlds'/f'{a.world}.wbt'
+out=(a.output or HERE.parent/'results'/datetime.now().strftime('webots_run_%Y%m%d_%H%M%S')).resolve()
+if out.exists() and any(out.iterdir()):
+    p.error('Output folder is nonempty; use a new folder to preserve previous evidence.')
+out.mkdir(parents=True,exist_ok=True)
+settings={'output':str(out),'record':a.record,'exit':a.exit,'world':a.world,'time_limit':a.time_limit,
+          'camera_hz':1000/96,'goal':[8,0],'seed':26126,'sensor_input':'rectified RGB pair',
+          'ground_support':'persistent; static course assumption','python':sys.version.split()[0]}
+config=out/'config.json';config.write_text(json.dumps(settings,indent=2)+'\n')
+print('Run outputs:',out,flush=True)
+if a.prepare_only:
+    print('Prepared. Open:',world);sys.exit(0)
+candidates=[a.webots,os.environ.get('WEBOTS_HOME'),'/Applications/Webots.app',
             str(HERE.parents[2]/'work/webots-install/Webots/Webots.app'),shutil.which('webots')]
-app=next((Path(p) for p in candidates if p and Path(p).exists()),None)
-if app is None:
-    parser.error('Install Webots R2025a from cyberbotics.com, or pass --webots PATH.')
-if sys.platform=='darwin' and app.suffix=='.app':
-    subprocess.run(['open','-a',str(app),str(world)],check=True)
-else:
-    executable=app/'webots' if app.is_dir() else app
-    subprocess.Popen([str(executable),'--mode=realtime',str(world)])
+app=next((Path(x).expanduser() for x in candidates if x and Path(x).expanduser().exists()),None)
+if app is None:p.error('Install Webots R2025a or pass --webots PATH.')
+if app.suffix=='.app':executable=app/'Contents/MacOS/webots'
+elif app.is_dir():executable=app/'webots'
+else:executable=app
+env=os.environ.copy();env['DRISHTI_CONFIG']=str(config)
+command=[str(executable),'--batch','--stdout','--stderr','--mode='+('fast' if a.fast else 'realtime'),str(world)]
+raise SystemExit(subprocess.call(command,env=env))

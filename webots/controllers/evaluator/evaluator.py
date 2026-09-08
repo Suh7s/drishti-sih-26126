@@ -1,5 +1,7 @@
 """Ground truth is recorded here, never supplied to the rover controller."""
 import json
+import os
+import sys
 import numpy as np
 import cv2
 from pathlib import Path
@@ -9,14 +11,19 @@ robot=Supervisor()
 step=int(robot.getBasicTimeStep())
 rover=robot.getFromDef('ROVER')
 shot=robot.getFromDef('SHOT')
-out=Path(__file__).resolve().parents[3]/'results/webots_latest'
+ROOT=Path(__file__).resolve().parents[3]
+settings=json.loads(Path(os.environ['DRISHTI_CONFIG']).read_text()) if os.environ.get('DRISHTI_CONFIG') else {}
+out=Path(settings.get('output',ROOT/'results/webots_latest'))
 out.mkdir(parents=True,exist_ok=True)
 log=(out/'ground_truth.jsonl').open('w',buffering=1)
 frame=0
+recording=False
+finished_at=None
 while robot.step(step)!=-1:
     if frame%3==0:
         p=np.array(rover.getPosition())
-        eye=p+np.array([-3.0,-4.1,2.6])
+        a=.12*np.sin(robot.getTime()*.045)
+        eye=p+np.array([-2.6*np.cos(a)+2.0*np.sin(a),-2.6*np.sin(a)-2.0*np.cos(a),1.7])
         target=p+np.array([.6,0,.22])
         forward=target-eye;forward/=np.linalg.norm(forward)
         left=np.cross([0,0,1],forward);left/=np.linalg.norm(left)
@@ -29,6 +36,28 @@ while robot.step(step)!=-1:
                              'orientation':rover.getOrientation()})+'\n')
     if frame%150==0:
         robot.exportImage(str(out/'scene.jpg'),95)
+    if frame==15 and settings.get('record'):
+        robot.movieStartRecording(str(out/'cinematic.mp4'),1280,720,0,90,1,False)
+        recording=True
     frame+=1
-    if robot.getTime()>=120:
-        robot.simulationSetMode(Supervisor.SIMULATION_MODE_PAUSE)
+    if (out/'complete.json').exists() and finished_at is None:
+        finished_at=robot.getTime()
+    done=(finished_at is not None and robot.getTime()>finished_at+2) or robot.getTime()>=settings.get('time_limit',120)
+    if done:
+        if recording:
+            robot.movieStopRecording()
+            while not robot.movieIsReady() and not robot.movieFailed():
+                if robot.step(step)==-1: break
+        robot.exportImage(str(out/'scene.jpg'),95)
+        log.close()
+        sys.path.insert(0,str(ROOT/'webots/tools'))
+        from evaluate import evaluate
+        if (out/'navigation.jsonl').exists():
+            result=evaluate(out)
+            print('EVALUATION '+json.dumps(result),flush=True)
+        if settings.get('exit'):
+            robot.simulationQuit(0)
+        else:
+            robot.simulationSetMode(Supervisor.SIMULATION_MODE_PAUSE)
+        break
+while robot.step(step)!=-1: pass
