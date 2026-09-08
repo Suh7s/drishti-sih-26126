@@ -13,3 +13,11 @@ dist/
 results/isaac_run/
 results/isaac_run_*/
 *.log
+
+# Local simulator state and scratch runs
+webots/controllers/*/runtime.ini
+webots/settings.json
+webots/worlds/.*.wbproj
+results/webots_latest/
+results/webots_checks/
+results/webots_run*/

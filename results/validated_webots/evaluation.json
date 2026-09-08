@@ -1,0 +1,24 @@
+{
+  "source": "Webots R2025a physics; stereo RGB navigation; independent Supervisor evaluation",
+  "scenario": "static_flat_two_obstacles",
+  "frames": 619,
+  "estimated_arrival": true,
+  "actual_goal_distance_m": 0.3497234682082037,
+  "success": true,
+  "elapsed_sim_seconds": 59.328,
+  "position_rmse_m": 0.008876986869632566,
+  "position_max_error_m": 0.019522608755390046,
+  "position_final_error_m": 0.019522608755390046,
+  "conservative_min_clearance_m": 0.1008626595894539,
+  "tracking_fraction": 0.9983844911147012,
+  "compute_median_ms": 32.35329099697992,
+  "compute_p95_ms": 35.154392005642876,
+  "path_length_m": 9.48041629137184,
+  "limitations": [
+    "Flat static course only",
+    "Known initial pose and launch pad",
+    "Classical stereo and VO; no learned semantics or loop closure",
+    "Ground support persists; not a dynamic obstacle benchmark",
+    "Clearance checks declared obstacle boxes, not every decorative object"
+  ]
+}

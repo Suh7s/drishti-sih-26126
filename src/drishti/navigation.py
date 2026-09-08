@@ -25,6 +25,7 @@ class Config:
     goal_tolerance: float = 0.5
     risk_weight: float = 5.0
     unknown_weight: float = 8.0
+    support_max_age: float = 4.0
 
 
 class GridMap:
@@ -154,13 +155,20 @@ class Navigator:
         speed = min(desired, self.speed + cfg.max_accel * max(0, min(dt, 0.25)))
         blocked = grid.blocked(cfg.radius + cfg.margin)
         # Swept centre samples out to latency + stopping distance. Unknown support vetoes.
-        reach = max(0.30, speed*cfg.sensor_timeout + speed*speed/(2*cfg.braking_accel))
+        reach = max(grid.resolution*.5, speed*cfg.sensor_timeout + speed*speed/(2*cfg.braking_accel)) if speed > 0 else 0.0
         for d in np.linspace(0, reach, max(3, int(reach/grid.resolution*3))):
             xy = p + d*np.array([math.cos(pose[2]), math.sin(pose[2])])
             q = grid.cell(xy)
             if not grid.inside(q) or blocked[q]:
+                current = grid.cell(p)
+                if (grid.inside(current) and not blocked[current] and
+                    grid.footprint_observed(p,cfg.radius,now=now,max_age=cfg.support_max_age)
+                    and abs(error) > .04):
+                    self.speed=0.0
+                    self.state,self.reason="TURN","Aligning within verified circular footprint"
+                    return np.array([0.0,0.0,omega])
                 return self.stop("HOLD", "Obstacle inside stopping envelope")
-            if not grid.footprint_observed(xy, cfg.radius, now=now):
+            if not grid.footprint_observed(xy, cfg.radius, now=now, max_age=cfg.support_max_age):
                 return self.stop("OBSERVE", "Ground support unverified")
         self.speed = speed
         self.state = "CAUTIOUS" if slow else "NAVIGATE"

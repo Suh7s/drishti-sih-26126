@@ -6,16 +6,17 @@ from .vision import StereoDepth,VisualOdometry,GroundMapper,camera_mount
 
 
 class CameraNavigation:
-    def __init__(self,calibration,goal=(10.0,0.0),initial_base_height=.50):
+    def __init__(self,calibration,goal=(10.0,0.0),initial_base_height=.50,
+                 mount=None, config=None):
         self.calibration=calibration
         self.goal=np.asarray(goal,float)
         self.grid=GridMap(100,80,.25,(-3.0,-10.0))
-        self.mount=camera_mount(height=.15)
+        self.mount=camera_mount(height=.15) if mount is None else mount.copy()
         initial=np.eye(4);initial[2,3]=initial_base_height
         self.stereo=StereoDepth(calibration)
         self.vo=VisualOdometry(calibration,initial@self.mount)
         self.mapper=GroundMapper(self.grid,calibration)
-        self.navigator=Navigator(Config(radius=.55,margin=.15,max_speed=.30))
+        self.navigator=Navigator(config or Config(radius=.55,margin=.15,max_speed=.30))
         self.last_stamp=None
         self.bootstrap_done=False
         self.launch_prior_error=None

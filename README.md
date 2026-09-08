@@ -1,21 +1,43 @@
 # DRISHTI
 
-Camera-first navigation prototype for SIH problem 26126.
+**Camera-driven autonomous navigation, running on a Mac in Webots.**
 
-Start with **START_HERE.md**. For the next Ubuntu Codex session, use
-**UBUNTU_HANDOFF.md**. Evidence and limitations are in **docs/STATUS.md**.
+SIH problem 26126 · Bharat Electronics Limited · GPS-denied outdoor UGV navigation.
 
-Target simulation: Ubuntu + RTX 5080 + Isaac Sim 6.0.1.
-Current status: portable prototype and experiments implemented; Isaac/Spot
-integration and cinematic recording require runtime debugging and verification.
+The current demonstrator is a four-wheel rover with rectified stereo cameras,
+metric visual odometry, observed-ground mapping and collision-aware A* control.
+The robot controller receives RGB images only. A separate supervisor records
+simulator truth for evaluation.
+
+## Measured physics run
+
+The saved flat, static two-obstacle run reached its destination in **59.33 s**,
+with **8.88 mm position RMSE** and **10.09 cm conservative obstacle clearance**.
+These are results from one controlled simulation, not real-world performance.
+
+See [evaluation and raw logs](results/validated_webots/) and
+[the run image](results/validated_webots/scene.jpg).
+
+## Run on macOS or Linux
+
+Install [Webots R2025a](https://github.com/cyberbotics/webots/releases/tag/R2025a), then:
 
 ```bash
-python3 run.py doctor
-python3 run.py test
-python3 run.py demo
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python run.py test
+python webots/launch.py
 ```
 
-Portable development dependencies are in requirements.txt. Use a separate virtual
-environment for portable development. Isaac Sim uses its own Python environment.
+Pass `--webots /path/to/Webots.app` if Webots is installed elsewhere.
 
-The offline demo is a 2-D synthetic-observation replay, not an Isaac recording.
+## Scope
+
+Validated: flat static course, known initial pose and checked launch pad, classical
+stereo and visual odometry. Not yet demonstrated: learned semantic perception,
+loop-closing SLAM, rough terrain, dynamic obstacles or physical hardware.
+
+The `isaac/` adapter and older `results/isaac_*` folders are experimental history.
+They do not establish successful Spot navigation. The existing `demo/` viewer is
+an older synthetic planning replay; it is not footage of the Webots run.
