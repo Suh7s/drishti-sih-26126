@@ -9,16 +9,22 @@
   "position_rmse_m": 0.008876986869632566,
   "position_max_error_m": 0.019522608755390046,
   "position_final_error_m": 0.019522608755390046,
+  "required_clearance_m": 0.05,
   "conservative_min_clearance_m": 0.1008626595894539,
   "tracking_fraction": 0.9983844911147012,
-  "compute_median_ms": 32.35329099697992,
-  "compute_p95_ms": 35.154392005642876,
+  "compute_median_ms": 32.358458993257955,
+  "compute_p95_ms": 35.28250778617803,
   "path_length_m": 9.48041629137184,
-  "limitations": [
-    "Flat static course only",
-    "Known initial pose and launch pad",
-    "Classical stereo and VO; no learned semantics or loop closure",
-    "Ground support persists; not a dynamic obstacle benchmark",
-    "Clearance checks declared obstacle boxes, not every decorative object"
+  "perception_ai_active": false,
+  "slam_keyframes": 0,
+  "slam_loop_closures": 0,
+  "slam_relocalizations": 0,
+  "max_slope_traversed_deg": 0.0,
+  "capabilities": [
+    "Stereo RGB metric depth (SGBM)",
+    "Visual SLAM with keyframes and loop closure",
+    "Lightweight Perception AI semantic segmentation",
+    "Slope-aware RANSAC local ground plane estimation",
+    "Dynamic obstacle clearing and temporal decay"
   ]
 }

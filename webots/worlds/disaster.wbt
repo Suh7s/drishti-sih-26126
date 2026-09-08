@@ -1,0 +1,255 @@
+#VRML_SIM R2025a utf8
+EXTERNPROTO "../protos/Oak.proto"
+WorldInfo { basicTimeStep 32 randomSeed 26126 }
+DEF SHOT Viewpoint { orientation -0.26 0.35 0.89 1.15 position -4.0 -5.5 3.8 fieldOfView 0.85 }
+Background { skyColor [ 0.38 0.46 0.52 ] }
+DirectionalLight { direction -0.35 0.55 -0.75 color 0.98 0.90 0.78 intensity 1.6 ambientIntensity 0.5 castShadows TRUE }
+Fog { color 0.42 0.48 0.52 visibilityRange 48 }
+
+Solid {
+  translation 5 0 -0.05
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColorMap ImageTexture { url [ "textures/nepal_terrain.jpg" ] }
+        roughness 0.95
+        metalness 0.02
+      }
+      geometry Box { size 24 18 0.1 }
+    }
+  ]
+  name "ground_basin"
+  boundingObject Box { size 24 18 0.1 }
+}
+Pose { translation 3.2 2.2 0.08 rotation 0.2 0.9 0 0.12 children [ Shape { appearance PBRAppearance { baseColor .42 .38 .32 roughness 0.88 metalness 0.05 baseColorMap ImageTexture { url [ "textures/nepal_mud.jpg" ] } } geometry Box { size 4.5 3.5 0.16 } } ] }
+Pose { translation 6.8 -2.0 0.1 rotation -0.1 0.95 0 0.15 children [ Shape { appearance PBRAppearance { baseColor .38 .35 .28 roughness 0.88 metalness 0.05 baseColorMap ImageTexture { url [ "textures/nepal_mud.jpg" ] } } geometry Box { size 5.2 3.8 0.20 } } ] }
+Pose { translation 8.5 1.0 0.07 rotation 0.3 0.8 0 0.10 children [ Shape { appearance PBRAppearance { baseColor .40 .36 .30 roughness 0.88 metalness 0.05 baseColorMap ImageTexture { url [ "textures/nepal_mud.jpg" ] } } geometry Box { size 3.8 3.0 0.14 } } ] }
+DEF HAZARD_MUD_POOL Solid {
+  translation 4.9 0.1 0.015
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.18 0.24 0.22
+        roughness 0.15
+        metalness 0.35
+        transparency 0.12
+      }
+      geometry Cylinder { radius 0.95 height 0.03 subdivision 32 }
+    }
+  ]
+  name "hazard_mud_water"
+  boundingObject Cylinder { radius 0.95 height 0.03 subdivision 32 }
+}
+DEF HAZARD_0 Solid {
+  translation 3.4 -0.2 0.38
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor .38 .40 .42
+        roughness 0.90
+        metalness 0.05
+        baseColorMap ImageTexture { url [ "textures/boulder.jpg" ] }
+      }
+      geometry Box { size 0.85 0.90 0.76 }
+    }
+  ]
+  name "hazard_boulder_0"
+  boundingObject Box { size 0.85 0.90 0.76 }
+}
+DEF HAZARD_1 Solid {
+  translation 6.5 1.1 0.25
+  rotation 0.2 0.4 0.9 0.75
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor .28 .22 .16
+        roughness 0.85
+        metalness 0.02
+      }
+      geometry Cylinder { radius 0.24 height 1.8 subdivision 24 }
+    }
+  ]
+  name "hazard_log_1"
+  boundingObject Cylinder { radius 0.24 height 1.8 subdivision 24 }
+}
+DEF HAZARD_2 Solid {
+  translation 7.8 -1.2 0.32
+  rotation 0.1 0.3 0.95 0.42
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor .48 .46 .44
+        roughness 0.92
+        metalness 0.05
+      }
+      geometry Box { size 0.75 1.1 0.64 }
+    }
+  ]
+  name "hazard_ruin_2"
+  boundingObject Box { size 0.75 1.1 0.64 }
+}
+Solid {
+  translation 2.4 1.8 0.15
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor .35 .37 .39
+        roughness 0.9
+        baseColorMap ImageTexture { url [ "textures/boulder.jpg" ] }
+      }
+      geometry Box { size 0.35 0.4 0.3 }
+    }
+  ]
+  name "debris_rock_0"
+  boundingObject Box { size 0.35 0.4 0.3 }
+}
+Solid {
+  translation 5.2 -1.6 0.18
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor .35 .37 .39
+        roughness 0.9
+        baseColorMap ImageTexture { url [ "textures/boulder.jpg" ] }
+      }
+      geometry Box { size 0.45 0.38 0.35 }
+    }
+  ]
+  name "debris_rock_1"
+  boundingObject Box { size 0.45 0.38 0.35 }
+}
+Solid {
+  translation 8.2 2.1 0.14
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor .35 .37 .39
+        roughness 0.9
+        baseColorMap ImageTexture { url [ "textures/boulder.jpg" ] }
+      }
+      geometry Box { size 0.38 0.42 0.28 }
+    }
+  ]
+  name "debris_rock_2"
+  boundingObject Box { size 0.38 0.42 0.28 }
+}
+Solid {
+  translation 9.4 -0.6 0.16
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor .35 .37 .39
+        roughness 0.9
+        baseColorMap ImageTexture { url [ "textures/boulder.jpg" ] }
+      }
+      geometry Box { size 0.4 0.35 0.32 }
+    }
+  ]
+  name "debris_rock_3"
+  boundingObject Box { size 0.4 0.35 0.32 }
+}
+Pose { translation 0 0 0.005 children [ Shape { appearance PBRAppearance { baseColor .18 .65 .55 roughness 0.88 metalness 0.05  } geometry Cylinder { radius 0.65 height 0.01 subdivision 48 } } ] }
+Pose { translation 10.0 0 0.008 children [ Shape { appearance PBRAppearance { baseColor .95 .45 .12 roughness 0.88 metalness 0.05  } geometry Cylinder { radius 0.75 height 0.016 subdivision 48 } } ] }
+Pose { translation 10.0 0 0.45 children [ Shape { appearance PBRAppearance { baseColor .15 .18 .20 roughness 0.88 metalness 0.05  } geometry Cylinder { radius 0.035 height 0.90 subdivision 16 } } ] }
+Pose { translation 10.0 0 0.92 children [ Shape { appearance PBRAppearance { baseColor .98 .42 .10 roughness 0.88 metalness 0.05  } geometry Box { size 0.42 0.02 0.24 } } ] }
+DEF ROVER Robot {
+  translation 0 0 0.13
+  name "DRISHTI rover"
+  controller "rover"
+  supervisor FALSE
+  children [
+    Pose { translation 0 0 0.1 children [ Shape { appearance PBRAppearance { baseColor .09 .13 .15 roughness 0.85 metalness 0 } geometry Box { size .52 .34 .17 } } ] }
+    Pose { translation 0 0 0.2 children [ Shape { appearance PBRAppearance { baseColor .91 .52 .12 roughness 0.85 metalness 0 } geometry Box { size .38 .32 .05 } } ] }
+    Pose { translation 0.2 0 0.38 children [ Shape { appearance PBRAppearance { baseColor .1 .14 .16 roughness 0.85 metalness 0 } geometry Box { size .035 .04 .43 } } ] }
+    Pose { translation 0.25 0 0.62 children [ Shape { appearance PBRAppearance { baseColor .06 .08 .10 roughness 0.85 metalness 0 } geometry Box { size .06 .28 .055 } } ] }
+    Pose { translation 0.267 -0.1 0.15 children [ Shape { appearance PBRAppearance { baseColor 1 .9 .63 roughness 0.85 metalness 0 } geometry Sphere { radius .027 subdivision 2 } } ] }
+    Pose { translation 0.267 0.1 0.15 children [ Shape { appearance PBRAppearance { baseColor 1 .9 .63 roughness 0.85 metalness 0 } geometry Sphere { radius .027 subdivision 2 } } ] }
+    Pose { translation -0.025 -0.175 0.13 children [ Shape { appearance PBRAppearance { baseColor .12 .7 .64 roughness 0.85 metalness 0 } geometry Box { size .32 .008 .035 } } ] }
+    Pose { translation -0.025 0.175 0.13 children [ Shape { appearance PBRAppearance { baseColor .12 .7 .64 roughness 0.85 metalness 0 } geometry Box { size .32 .008 .035 } } ] }
+    Pose { translation -0.12 0 0.227 children [ Shape { appearance PBRAppearance { baseColor .14 .18 .19 roughness 0.85 metalness 0 } geometry Box { size .009 .23 .005 } } ] }
+    Pose { translation -0.06 0 0.227 children [ Shape { appearance PBRAppearance { baseColor .14 .18 .19 roughness 0.85 metalness 0 } geometry Box { size .009 .23 .005 } } ] }
+    Pose { translation 0 0 0.227 children [ Shape { appearance PBRAppearance { baseColor .14 .18 .19 roughness 0.85 metalness 0 } geometry Box { size .009 .23 .005 } } ] }
+    Pose { translation 0.06 0 0.227 children [ Shape { appearance PBRAppearance { baseColor .14 .18 .19 roughness 0.85 metalness 0 } geometry Box { size .009 .23 .005 } } ] }
+    Pose { translation 0.12 0 0.227 children [ Shape { appearance PBRAppearance { baseColor .14 .18 .19 roughness 0.85 metalness 0 } geometry Box { size .009 .23 .005 } } ] }
+    Camera { translation .29 0.08 .62 rotation 0 1 0 0.78539816339 name "left" width 640 height 400 fieldOfView 1.4 near .03 }
+    Camera { translation .29 -0.08 .62 rotation 0 1 0 0.78539816339 name "right" width 640 height 400 fieldOfView 1.4 near .03 }
+    HingeJoint { jointParameters HingeJointParameters { axis 0 1 0 anchor 0.18 0.23 0 }
+      device [ RotationalMotor { name "front_left" maxVelocity 15 maxTorque 14 } ]
+      endPoint Solid { translation 0.18 0.23 0 rotation 1 0 0 1.57079632679
+        children [ Shape { appearance PBRAppearance { baseColor .035 .045 .05 roughness 0.85 metalness 0 } geometry Cylinder { radius .13 height .10 subdivision 32 } }
+        Pose { translation 0 0 0.052 children [ Shape { appearance PBRAppearance { baseColor .48 .53 .55 roughness 0.85 metalness 0 } geometry Cylinder { radius .071 height .006 subdivision 12 } } ] } ]
+        name "front_left_wheel" boundingObject Cylinder { radius .13 height .1 subdivision 32 }
+        physics Physics { density -1 mass .7 } } }
+    HingeJoint { jointParameters HingeJointParameters { axis 0 1 0 anchor -0.18 0.23 0 }
+      device [ RotationalMotor { name "rear_left" maxVelocity 15 maxTorque 14 } ]
+      endPoint Solid { translation -0.18 0.23 0 rotation 1 0 0 1.57079632679
+        children [ Shape { appearance PBRAppearance { baseColor .035 .045 .05 roughness 0.85 metalness 0 } geometry Cylinder { radius .13 height .10 subdivision 32 } }
+        Pose { translation 0 0 0.052 children [ Shape { appearance PBRAppearance { baseColor .48 .53 .55 roughness 0.85 metalness 0 } geometry Cylinder { radius .071 height .006 subdivision 12 } } ] } ]
+        name "rear_left_wheel" boundingObject Cylinder { radius .13 height .1 subdivision 32 }
+        physics Physics { density -1 mass .7 } } }
+    HingeJoint { jointParameters HingeJointParameters { axis 0 1 0 anchor 0.18 -0.23 0 }
+      device [ RotationalMotor { name "front_right" maxVelocity 15 maxTorque 14 } ]
+      endPoint Solid { translation 0.18 -0.23 0 rotation 1 0 0 1.57079632679
+        children [ Shape { appearance PBRAppearance { baseColor .035 .045 .05 roughness 0.85 metalness 0 } geometry Cylinder { radius .13 height .10 subdivision 32 } }
+        Pose { translation 0 0 0.052 children [ Shape { appearance PBRAppearance { baseColor .48 .53 .55 roughness 0.85 metalness 0 } geometry Cylinder { radius .071 height .006 subdivision 12 } } ] } ]
+        name "front_right_wheel" boundingObject Cylinder { radius .13 height .1 subdivision 32 }
+        physics Physics { density -1 mass .7 } } }
+    HingeJoint { jointParameters HingeJointParameters { axis 0 1 0 anchor -0.18 -0.23 0 }
+      device [ RotationalMotor { name "rear_right" maxVelocity 15 maxTorque 14 } ]
+      endPoint Solid { translation -0.18 -0.23 0 rotation 1 0 0 1.57079632679
+        children [ Shape { appearance PBRAppearance { baseColor .035 .045 .05 roughness 0.85 metalness 0 } geometry Cylinder { radius .13 height .10 subdivision 32 } }
+        Pose { translation 0 0 0.052 children [ Shape { appearance PBRAppearance { baseColor .48 .53 .55 roughness 0.85 metalness 0 } geometry Cylinder { radius .071 height .006 subdivision 12 } } ] } ]
+        name "rear_right_wheel" boundingObject Cylinder { radius .13 height .1 subdivision 32 }
+        physics Physics { density -1 mass .7 } } }
+  ]
+  boundingObject Pose { translation 0 0 .10 children [ Box { size .52 .34 .17 } ] }
+  physics Physics { density -1 mass 6 centerOfMass [ 0 0 .06 ] }
+}
+Oak { translation 5.004 6.948 0 rotation 0 0 1 2.564 name "nepal_tree_0" }
+Oak { translation 13.147 -5.488 0 rotation 0 0 1 5.070 name "nepal_tree_1" }
+Oak { translation 6.114 6.253 0 rotation 0 0 1 5.930 name "nepal_tree_2" }
+Oak { translation 5.102 4.496 0 rotation 0 0 1 2.582 name "nepal_tree_3" }
+Oak { translation 15.959 7.362 0 rotation 0 0 1 1.450 name "nepal_tree_4" }
+Oak { translation 11.149 -7.466 0 rotation 0 0 1 0.218 name "nepal_tree_5" }
+Oak { translation -3.385 5.985 0 rotation 0 0 1 5.556 name "nepal_tree_6" }
+Oak { translation -0.553 7.888 0 rotation 0 0 1 1.057 name "nepal_tree_7" }
+Oak { translation -3.414 -8.723 0 rotation 0 0 1 3.130 name "nepal_tree_8" }
+Oak { translation -1.987 3.737 0 rotation 0 0 1 5.619 name "nepal_tree_9" }
+Oak { translation 15.725 6.552 0 rotation 0 0 1 0.835 name "nepal_tree_10" }
+Oak { translation 15.219 -3.942 0 rotation 0 0 1 4.636 name "nepal_tree_11" }
+Oak { translation 13.644 -5.301 0 rotation 0 0 1 2.251 name "nepal_tree_12" }
+Oak { translation -0.428 -4.902 0 rotation 0 0 1 5.224 name "nepal_tree_13" }
+Oak { translation 7.580 -8.384 0 rotation 0 0 1 4.219 name "nepal_tree_14" }
+Oak { translation 7.928 -7.170 0 rotation 0 0 1 2.674 name "nepal_tree_15" }
+Oak { translation 0.903 4.085 0 rotation 0 0 1 2.774 name "nepal_tree_16" }
+Oak { translation 17.170 -7.235 0 rotation 0 0 1 1.961 name "nepal_tree_17" }
+Oak { translation -3.082 -8.624 0 rotation 0 0 1 5.266 name "nepal_tree_18" }
+Oak { translation 5.777 5.470 0 rotation 0 0 1 6.039 name "nepal_tree_19" }
+Oak { translation 2.762 4.827 0 rotation 0 0 1 0.717 name "nepal_tree_20" }
+Oak { translation -1.465 5.031 0 rotation 0 0 1 0.411 name "nepal_tree_21" }
+Oak { translation 16.943 7.765 0 rotation 0 0 1 4.839 name "nepal_tree_22" }
+Oak { translation 16.517 -8.596 0 rotation 0 0 1 2.305 name "nepal_tree_23" }
+Oak { translation 5.530 -4.452 0 rotation 0 0 1 4.843 name "nepal_tree_24" }
+Oak { translation 4.140 -6.253 0 rotation 0 0 1 5.361 name "nepal_tree_25" }
+Oak { translation 16.778 3.435 0 rotation 0 0 1 5.785 name "nepal_tree_26" }
+Oak { translation 15.440 5.640 0 rotation 0 0 1 0.403 name "nepal_tree_27" }
+Oak { translation 16.901 -5.790 0 rotation 0 0 1 4.983 name "nepal_tree_28" }
+Oak { translation 12.100 -4.926 0 rotation 0 0 1 4.658 name "nepal_tree_29" }
+Oak { translation 17.045 -7.555 0 rotation 0 0 1 2.716 name "nepal_tree_30" }
+Oak { translation 16.874 -5.154 0 rotation 0 0 1 3.019 name "nepal_tree_31" }
+Oak { translation 12.712 -5.645 0 rotation 0 0 1 4.734 name "nepal_tree_32" }
+Oak { translation -1.505 -3.465 0 rotation 0 0 1 2.377 name "nepal_tree_33" }
+Oak { translation 12.896 -4.913 0 rotation 0 0 1 5.854 name "nepal_tree_34" }
+Oak { translation -2.661 -5.160 0 rotation 0 0 1 4.178 name "nepal_tree_35" }
+Oak { translation -3.531 6.769 0 rotation 0 0 1 5.551 name "nepal_tree_36" }
+Oak { translation 14.200 7.752 0 rotation 0 0 1 5.483 name "nepal_tree_37" }
+Oak { translation 2.905 3.595 0 rotation 0 0 1 5.093 name "nepal_tree_38" }
+Oak { translation -1.583 -3.639 0 rotation 0 0 1 2.312 name "nepal_tree_39" }
+Pose { translation -10 22 6 children [ Shape { appearance PBRAppearance { baseColor .26 .34 .36 roughness 0.88 metalness 0.05  } geometry Cone { bottomRadius 14 height 16 subdivision 8 } } ] }
+Pose { translation 0 24 7 children [ Shape { appearance PBRAppearance { baseColor .26 .34 .36 roughness 0.88 metalness 0.05  } geometry Cone { bottomRadius 16 height 18 subdivision 8 } } ] }
+Pose { translation 10 25 8 children [ Shape { appearance PBRAppearance { baseColor .26 .34 .36 roughness 0.88 metalness 0.05  } geometry Cone { bottomRadius 18 height 20 subdivision 8 } } ] }
+Pose { translation 20 23 6 children [ Shape { appearance PBRAppearance { baseColor .26 .34 .36 roughness 0.88 metalness 0.05  } geometry Cone { bottomRadius 15 height 17 subdivision 8 } } ] }
+Pose { translation -6 -22 6 children [ Shape { appearance PBRAppearance { baseColor .26 .34 .36 roughness 0.88 metalness 0.05  } geometry Cone { bottomRadius 14 height 15 subdivision 8 } } ] }
+Pose { translation 6 -24 7 children [ Shape { appearance PBRAppearance { baseColor .26 .34 .36 roughness 0.88 metalness 0.05  } geometry Cone { bottomRadius 16 height 17 subdivision 8 } } ] }
+Pose { translation 16 -23 6 children [ Shape { appearance PBRAppearance { baseColor .26 .34 .36 roughness 0.88 metalness 0.05  } geometry Cone { bottomRadius 15 height 16 subdivision 8 } } ] }
+Robot { name "evaluation_only" supervisor TRUE controller "evaluator" }

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "drishti-navigation"
-version = "0.1.0"
-description = "Camera navigation prototype and reproducible planning demonstrator"
+version = "0.2.0"
+description = "Autonomous UGV navigation with Perception AI, Visual SLAM, and rough-terrain planning"
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.26,<3", "opencv-python>=4.10,<5"]
 

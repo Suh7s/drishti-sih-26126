@@ -27,12 +27,12 @@ out = Path(settings.get('output',ROOT/'results/webots_latest'))
 out.mkdir(parents=True, exist_ok=True)
 f = 640/(2*np.tan(1.4/2))
 cal = Calibration(f,f,320,200,.16,640,400)
-nav = CameraNavigation(cal, goal=(8,0), initial_base_height=.13,
+goal = tuple(settings.get('goal', [10.0, 0.0]))
+nav = CameraNavigation(cal, goal=goal, initial_base_height=.13,
     mount=camera_mount(height=.62,forward=.29,left=.08,pitch_degrees=45),
-    config=Config(radius=.46,margin=.16,max_speed=.25,max_yaw_rate=.45,goal_tolerance=.35,
-                  support_max_age=float('inf')))
-# Ground support persists in this explicitly static, flat course. New occupied
-# evidence still overrides it. This is not validation of dynamic obstacles.
+    config=Config(radius=.46,margin=.16,max_speed=.26,max_yaw_rate=.45,goal_tolerance=.40,
+                  support_max_age=float('inf') if settings.get('static_course', False) else 5.0,
+                  slope_weight=3.5, max_slope_rad=0.52))
 log = (out/'navigation.jsonl').open('w', buffering=1)
 video = cv2.VideoWriter(str(out/'perception.mp4'),cv2.VideoWriter_fourcc(*'mp4v'),1000/(step*3),(1280,400)) if settings.get('record') else None
 frame = 0
@@ -53,10 +53,14 @@ try:
         for m,value in zip(motors,wheel): m.setVelocity(float(value))
         if video is not None:
             rgb=cv2.cvtColor(images[0],cv2.COLOR_RGB2BGR)
+            if getattr(nav, 'latest_semantic_mask', None) is not None:
+                sem_overlay = cv2.addWeighted(rgb, 0.68, nav.latest_semantic_mask, 0.32, 0)
+            else:
+                sem_overlay = rgb
             valid=np.isfinite(depth)
-            d8=np.uint8(np.clip(np.nan_to_num(depth,nan=0)/5,0,1)*255)
+            d8=np.uint8(np.clip(np.nan_to_num(depth,nan=0)/6,0,1)*255)
             heat=cv2.applyColorMap(d8,cv2.COLORMAP_TURBO);heat[~valid]=[17,23,27]
-            video.write(np.hstack([rgb,heat]))
+            video.write(np.hstack([sem_overlay,heat]))
         if frame%10==0:
             print(f"DRISHTI {row['t']:.1f}s {row['state']} {row['pose'][:2]} q={row['quality']:.2f} {row['reason']}",flush=True)
             cv2.imwrite(str(out/'left.jpg'),cv2.cvtColor(images[0],cv2.COLOR_RGB2BGR))

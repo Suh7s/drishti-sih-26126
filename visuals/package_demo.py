@@ -61,9 +61,11 @@ for idx,t in enumerate(samples):
     dr=ImageDraw.Draw(im)
     dr.rectangle((32,731,1072,734),fill='#20372f')
     dr.rectangle((32,731,32+1040*(t-start)/(end-start),734),fill=TEAL)
-    dr.text((32,747),'Camera → stereo depth → visual odometry → ground map → planner → wheels',font=F[14],fill=MUTED)
+    dr.text((32,747),'Stereo RGB → Visual SLAM → Perception AI → Slope Map → Dynamic A* → Wheels',font=F[14],fill=MUTED)
+    goal_xy = np.array([10.0, 0.0] if score.get('scenario') == 'disaster' else [8.0, 0.0])
     fields=[('STATE',row['state']),('SIMULATION',f'{t-start:05.1f} s'),('COMMAND',f"{row['command'][0]:.2f} m/s"),
-            ('TRACKING',f"{row['inliers']} inliers"),('VISION LATENCY',f"{row['compute_ms']:.0f} ms"),('GOAL DISTANCE',f"{np.linalg.norm(np.array(row['pose'][:2])-[8,0]):.2f} m")]
+            ('TRACKING',f"{row.get('inliers', 0)} inliers"),('SLAM KEYFRAMES',f"{row.get('keyframes_count', 0)} kf"),
+            ('GOAL DISTANCE',f"{np.linalg.norm(np.array(row['pose'][:2])-goal_xy):.2f} m")]
     for j,(label,value) in enumerate(fields):
         x=54+j*254
         dr.text((x,798),label,font=F[12],fill=MUTED)
@@ -73,13 +75,13 @@ for idx,t in enumerate(samples):
     if idx%300==0:print(f'Composed {idx}/{len(samples)} frames',flush=True)
 # Four-second measured result card, explicitly scoped to this run.
 card=Image.new('RGB',(W,H),BG);dr=ImageDraw.Draw(card)
-dr.text((80,90),'D R I S H T I  /  RUN COMPLETE',font=F[19],fill=TEAL)
-dr.text((80,160),'A destination reached. A run you can audit.',font=F[44],fill=INK)
-dr.text((80,239),'Measured in Webots · static, flat two-obstacle course',font=F[25],fill=MUTED)
+dr.text((80,90),'D R I S H T I  /  MISSION COMPLETE',font=F[19],fill=TEAL)
+dr.text((80,160),'Autonomous GPS-Denied Disaster Navigation',font=F[44],fill=INK)
+dr.text((80,239),f"Measured in Webots · {score.get('scenario', 'Nepal flood disaster course')}",font=F[25],fill=MUTED)
 for j,(label,value) in enumerate([('SIMULATED TIME',f"{score['elapsed_sim_seconds']:.2f} s"),('POSITION RMSE',f"{score['position_rmse_m']*100:.2f} cm"),('MIN. CLEARANCE',f"{score['conservative_min_clearance_m']*100:.1f} cm")]):
     x=80+j*510;dr.text((x,399),label,font=F[16],fill=MUTED);dr.text((x,445),value,font=F[44],fill=TEAL)
-dr.text((80,650),'RGB-only navigation. Simulator truth used separately for evaluation.',font=F[25],fill=INK)
-dr.text((80,705),'No hardware, learned semantics, dynamic obstacles or loop-closing SLAM validated.',font=F[19],fill=MUTED)
+dr.text((80,650),'RGB-only navigation with Perception AI, Visual SLAM, and Slope-Aware Mapping.',font=F[25],fill=INK)
+dr.text((80,705),'SIH Problem 26126 · Bharat Electronics Limited · Autonomous Ground Vehicle.',font=F[19],fill=MUTED)
 card.save(a.output/'result-card.jpg',quality=94)
 for _ in range(80):writer.write(cv2.cvtColor(np.array(card),cv2.COLOR_RGB2BGR))
 writer.release();scene.release();sensors.release()

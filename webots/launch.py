@@ -12,12 +12,12 @@ HERE=Path(__file__).resolve().parent
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('--webots',help='Webots executable or macOS .app path')
 p.add_argument('--prepare-only',action='store_true')
-p.add_argument('--world',choices=['drishti','benchmark'],default='drishti')
+p.add_argument('--world',choices=['disaster','drishti','benchmark'],default='disaster')
 p.add_argument('--record',action='store_true')
 p.add_argument('--fast',action='store_true')
 p.add_argument('--exit',action='store_true',help='Close simulator after evaluation')
 p.add_argument('--output',type=Path)
-p.add_argument('--time-limit',type=float,default=120)
+p.add_argument('--time-limit',type=float,default=140)
 a=p.parse_args()
 import numpy,cv2
 for c in ('rover','evaluator'):
@@ -27,9 +27,13 @@ out=(a.output or HERE.parent/'results'/datetime.now().strftime('webots_run_%Y%m%
 if out.exists() and any(out.iterdir()):
     p.error('Output folder is nonempty; use a new folder to preserve previous evidence.')
 out.mkdir(parents=True,exist_ok=True)
+goal=[10,0] if a.world=='disaster' else [8,0]
 settings={'output':str(out),'record':a.record,'exit':a.exit,'world':a.world,'time_limit':a.time_limit,
-          'camera_hz':1000/96,'goal':[8,0],'seed':26126,'sensor_input':'rectified RGB pair',
-          'ground_support':'persistent; static course assumption','python':sys.version.split()[0]}
+          'camera_hz':1000/96,'goal':goal,'seed':26126,'sensor_input':'rectified RGB pair',
+          'perception_ai':'40-feature MLP semantic segmentation (Traversable/Obstacle/Mud/Vegetation)',
+          'slam':'Visual SLAM with keyframes and loop closure',
+          'ground_support':'slope-aware RANSAC ground plane and dynamic obstacle decay',
+          'python':sys.version.split()[0]}
 config=out/'config.json';config.write_text(json.dumps(settings,indent=2)+'\n')
 print('Run outputs:',out,flush=True)
 if a.prepare_only:

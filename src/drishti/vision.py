@@ -136,58 +136,141 @@ class VisualOdometry:
         return self.T.copy(),self.quality,"TRACKING"
 
 
+def fit_ground_plane_ransac(points, cam_xy=None, expected_ground_z=0.0, max_iter=50, inlier_thresh=0.09):
+    """Estimate local ground plane ax + by + cz + d = 0 using RANSAC."""
+    if len(points) < 20:
+        return None
+    N = len(points)
+    best_inliers = 0
+    best_plane = None
+    rng = np.random.default_rng(26126)
+    with np.errstate(all='ignore'):
+        for _ in range(max_iter):
+            idx = rng.choice(N, 3, replace=False)
+            p1, p2, p3 = points[idx]
+            v1, v2 = p2 - p1, p3 - p1
+            normal = np.cross(v1, v2)
+            norm_len = np.linalg.norm(normal)
+            if norm_len < 1e-6:
+                continue
+            normal /= norm_len
+            if normal[2] < 0:
+                normal = -normal
+            # Check that normal is roughly upward (|nz| > 0.65 -> slope < ~49 deg)
+            if normal[2] < 0.65:
+                continue
+            d = -float(np.dot(normal, p1))
+            dists = np.abs(points @ normal + d)
+            inliers = int(np.sum(dists < inlier_thresh))
+            if inliers > best_inliers:
+                best_inliers = inliers
+                best_plane = (float(normal[0]), float(normal[1]), float(normal[2]), d)
+                if inliers > 0.65 * N:
+                    break
+
+    if best_plane is not None and best_inliers >= 18:
+        pa, pb, pc, pd = best_plane
+        # Ground plane plausibility check: plane at vehicle location must be near ground_z
+        if cam_xy is not None:
+            z_at_cam = -(pa * cam_xy[0] + pb * cam_xy[1] + pd) / pc
+            if abs(z_at_cam - expected_ground_z) > 0.35:
+                return None
+        slope = float(np.arccos(np.clip(pc, -1.0, 1.0)))
+        return pa, pb, pc, pd, best_inliers, slope
+    return None
+
+
 class GroundMapper:
     def __init__(self, grid, calibration, ground_z=0.0):
-        self.grid,self.c,self.ground_z = grid,calibration,ground_z
-        self.hazard_votes=np.zeros(grid.occupied.shape,np.uint8)
+        self.grid, self.c, self.ground_z = grid, calibration, ground_z
+        self.hazard_votes = np.zeros(grid.occupied.shape, np.uint8)
 
-    def update(self, depth, T_world_camera, timestamp):
-        """Flat-ground baseline. Do not deploy unchanged on slopes or steps.
+    def update(self, depth, T_world_camera, timestamp, semantic_cost_map=None):
+        """Slope-aware and semantic ground mapping with dynamic evidence clearing.
 
-        Observed support requires >=3 independent pixel samples near the known
-        start ground plane. Elevated and below-plane returns mark hazards.
-        There is no ray-carving of free support and no hole filling across gaps.
+        Fits local ground plane via RANSAC on rough terrain, detects positive
+        obstacles and negative drop-offs/ditches, updates cell slope, and
+        integrates Perception AI traversability costs.
         """
-        rows,cols = np.indices(depth.shape)
-        mask = np.isfinite(depth)&(depth<7.0)
-        mask &= (rows%3==0)&(cols%3==0)
-        uv = np.column_stack((cols[mask],rows[mask]))
-        points = unproject(uv,depth[mask],self.c)
-        world = np.einsum('ij,kj->ik',points,T_world_camera[:3,:3])+T_world_camera[:3,3]
-        cells = np.floor((world[:,:2]-self.grid.origin)/self.grid.resolution).astype(int)
-        valid = (cells[:,0]>=0)&(cells[:,0]<self.grid.width)&(cells[:,1]>=0)&(cells[:,1]<self.grid.height)
-        cells,world,uv = cells[valid],world[valid],uv[valid]
+        rows, cols = np.indices(depth.shape)
+        mask = np.isfinite(depth) & (depth < 7.0)
+        mask &= (rows % 3 == 0) & (cols % 3 == 0)
+        uv = np.column_stack((cols[mask], rows[mask]))
+        points = unproject(uv, depth[mask], self.c)
+        world = np.einsum('ij,kj->ik', points, T_world_camera[:3, :3]) + T_world_camera[:3, 3]
+        cells = np.floor((world[:, :2] - self.grid.origin) / self.grid.resolution).astype(int)
+        valid = (cells[:, 0] >= 0) & (cells[:, 0] < self.grid.width) & (cells[:, 1] >= 0) & (cells[:, 1] < self.grid.height)
+        cells, world, uv, points = cells[valid], world[valid], uv[valid], points[valid]
+
         shape = self.grid.occupied.shape
-        support,obstacle = np.zeros(shape,int),np.zeros(shape,int)
-        z = world[:,2]-self.ground_z
-        ground = np.abs(z)<0.10
-        hazard = ((z>0.16)&(z<1.3))|(z < -0.15)
-        np.add.at(support,(cells[ground,1],cells[ground,0]),1)
-        np.add.at(obstacle,(cells[hazard,1],cells[hazard,0]),1)
-        # Reject isolated disparity outliers. A hazard needs repeated majority
-        # evidence in its cell. This is a heuristic, evaluated only on flat scenes.
-        total=np.zeros(shape,int)
-        np.add.at(total,(cells[:,1],cells[:,0]),1)
-        seen = (support>=3)&(support>=0.6*total)
-        candidate=(obstacle>=5)&(obstacle>=0.65*total)
-        self.hazard_votes[candidate]=np.minimum(self.hazard_votes[candidate].astype(int)+1,3)
-        self.hazard_votes[seen]=0
-        occ=candidate&(self.hazard_votes>=2)
-        self.grid.observed |= seen|occ
-        self.grid.last_seen[seen|occ] = timestamp
-        # Persistent obstacle evidence is conservative; dynamic clearing is future work.
+        support, obstacle = np.zeros(shape, int), np.zeros(shape, int)
+
+        # Launch diagnostic check against declared flat reference height
+        launch_region = (uv[:, 1] > .55 * self.c.height) & (np.abs(uv[:, 0] - self.c.cx) < .3 * self.c.width)
+        diagnostic_z = (world[:, 2] - self.ground_z)[launch_region]
+
+        # Local ground plane estimation via RANSAC on near-field support
+        near_mask = (points[:, 2] > 0.5) & (points[:, 2] < 3.8) & (np.abs(points[:, 0]) < 1.8)
+        cam_xy = T_world_camera[:2, 3]
+        plane_fit = fit_ground_plane_ransac(world[near_mask], cam_xy=cam_xy, expected_ground_z=self.ground_z) if np.sum(near_mask) >= 25 else None
+
+        if plane_fit is not None:
+            pa, pb, pc, pd, _, slope = plane_fit
+            local_ground_z = -(pa * world[:, 0] + pb * world[:, 1] + pd) / pc
+            z_diff = world[:, 2] - local_ground_z
+            ground = np.abs(z_diff) < 0.12
+            hazard = ((z_diff > 0.16) & (z_diff < 1.35)) | (z_diff < -0.16)
+            # Record local slope on ground cells
+            if np.any(ground):
+                self.grid.slope[cells[ground, 1], cells[ground, 0]] = slope
+        else:
+            z_diff = world[:, 2] - self.ground_z
+            ground = np.abs(z_diff) < 0.10
+            hazard = ((z_diff > 0.16) & (z_diff < 1.3)) | (z_diff < -0.15)
+            slope = 0.0
+
+        np.add.at(support, (cells[ground, 1], cells[ground, 0]), 1)
+        np.add.at(obstacle, (cells[hazard, 1], cells[hazard, 0]), 1)
+
+        # Integrate Perception AI semantic costs if available
+        if semantic_cost_map is not None:
+            gh, gw = semantic_cost_map.shape[:2]
+            py = np.clip(uv[:, 1] * gh // self.c.height, 0, gh - 1)
+            px = np.clip(uv[:, 0] * gw // self.c.width, 0, gw - 1)
+            costs = semantic_cost_map[py, px]
+            np.maximum.at(self.grid.risk, (cells[:, 1], cells[:, 0]), costs * 0.75)
+            sem_hazard = costs > 0.85
+            np.add.at(obstacle, (cells[sem_hazard, 1], cells[sem_hazard, 0]), 2)
+
+        total = np.zeros(shape, int)
+        np.add.at(total, (cells[:, 1], cells[:, 0]), 1)
+        seen = (support >= 3) & (support >= 0.6 * total)
+        candidate = (obstacle >= 5) & (obstacle >= 0.65 * total)
+
+        self.hazard_votes[candidate] = np.minimum(self.hazard_votes[candidate].astype(int) + 1, 3)
+        # Free-space clearing: actively observed ground clears stale obstacle votes
+        self.hazard_votes[seen] = 0
+        self.grid.occupied[seen] = False
+
+        occ = candidate & (self.hazard_votes >= 2)
+        self.grid.observed |= seen | occ
+        self.grid.last_seen[seen | occ] = timestamp
         self.grid.occupied |= occ
-        self.grid.risk[seen] = np.clip(1.0-support[seen]/25,0,1)*0.25
-        # Select the diagnostic region in image coordinates, without filtering
-        # for agreement with the assumed plane (which would make this circular).
-        launch_region=(uv[:,1]>.55*self.c.height)&(np.abs(uv[:,0]-self.c.cx)<.3*self.c.width)
-        ground_z = z[launch_region]
-        # This is an image-derived check of the declared flat launch-pad prior.
-        # It is diagnostic only: it never changes the assumed plane or VO pose.
-        return {"support_cells":int(seen.sum()),"hazard_cells":int(occ.sum()),
-                "ground_points":int(ground_z.size),
-                "ground_z_median":float(np.median(ground_z)) if ground_z.size else float("nan"),
-                "ground_z_mad":float(np.median(np.abs(ground_z-np.median(ground_z)))) if ground_z.size else float("nan")}
+
+        # Base risk from sparse support + slope penalty
+        base_risk = np.clip(1.0 - support[seen] / 25.0, 0.0, 1.0) * 0.25
+        if slope > 0.35:
+            base_risk += np.clip((slope - 0.35) * 1.5, 0.0, 0.5)
+        self.grid.risk[seen] = np.maximum(self.grid.risk[seen], base_risk)
+
+        return {
+            "support_cells": int(seen.sum()),
+            "hazard_cells": int(occ.sum()),
+            "ground_points": int(diagnostic_z.size),
+            "ground_z_median": float(np.median(diagnostic_z)) if diagnostic_z.size else float("nan"),
+            "ground_z_mad": float(np.median(np.abs(diagnostic_z - np.median(diagnostic_z)))) if diagnostic_z.size else float("nan"),
+            "local_slope_deg": float(np.rad2deg(slope))
+        }
 
 
 def _camera_pitch(pitch_degrees):

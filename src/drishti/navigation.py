@@ -26,6 +26,9 @@ class Config:
     risk_weight: float = 5.0
     unknown_weight: float = 8.0
     support_max_age: float = 4.0
+    slope_weight: float = 3.0
+    max_slope_rad: float = 0.55
+    obstacle_decay_age: float = 3.5
 
 
 class GridMap:
@@ -35,6 +38,8 @@ class GridMap:
         self.observed = np.zeros((height, width), bool)
         self.occupied = np.zeros((height, width), bool)
         self.risk = np.zeros((height, width), float)
+        self.slope = np.zeros((height, width), float)
+        self.semantic_cost = np.zeros((height, width), float)
         self.last_seen = np.full((height, width), -np.inf)
 
     def cell(self, xy):
@@ -48,10 +53,12 @@ class GridMap:
     def inside(self, rc):
         return 0 <= rc[0] < self.height and 0 <= rc[1] < self.width
 
-    def blocked(self, radius):
+    def blocked(self, radius, max_slope=None):
         """Inflate occupied cells and map edge by footprint plus caller margin."""
         n = int(math.ceil(radius / self.resolution))
         out = self.occupied.copy()
+        if max_slope is not None:
+            out |= (self.slope > max_slope)
         # Account for finite source/destination cell extent conservatively.
         for dr in range(-n, n + 1):
             for dc in range(-n, n + 1):
@@ -63,6 +70,12 @@ class GridMap:
         out[:n, :] = out[-n:, :] = True
         out[:, :n] = out[:, -n:] = True
         return out
+
+    def decay(self, now, max_age=3.5):
+        """Decay stale obstacle occupancy to accommodate dynamic obstacles."""
+        if not math.isinf(max_age) and max_age > 0:
+            stale = (now - self.last_seen > max_age) & self.occupied
+            self.occupied[stale] = False
 
     def footprint_observed(self, xy, radius, now=None, max_age=4.0):
         r, c = self.cell(xy)
@@ -81,7 +94,7 @@ class GridMap:
 
 def astar(grid, start_xy, goal_xy, cfg, allow_unknown=True, risk_aware=True):
     start, goal = grid.cell(start_xy), grid.cell(goal_xy)
-    blocked = grid.blocked(cfg.radius + cfg.margin)
+    blocked = grid.blocked(cfg.radius + cfg.margin, max_slope=getattr(cfg, 'max_slope_rad', None))
     if not grid.inside(start) or not grid.inside(goal) or blocked[start] or blocked[goal]:
         return []
     def heuristic(p):
@@ -105,8 +118,9 @@ def astar(grid, start_xy, goal_xy, cfg, allow_unknown=True, risk_aware=True):
             if dr and dc and (blocked[p[0]+dr,p[1]] or blocked[p[0],p[1]+dc]):
                 continue
             risk = cfg.risk_weight * grid.risk[q] if risk_aware else 0.0
+            slope_cost = getattr(cfg, 'slope_weight', 3.0) * grid.slope[q] if risk_aware else 0.0
             unknown = cfg.unknown_weight if not grid.observed[q] else 0.0
-            ng = g + math.hypot(dr,dc) * (1.0 + risk + unknown)
+            ng = g + math.hypot(dr,dc) * (1.0 + risk + unknown + slope_cost)
             if ng < best.get(q, math.inf):
                 best[q], previous[q] = ng, p
                 heapq.heappush(queue, (ng + heuristic(q), ng, q))
@@ -139,6 +153,8 @@ class Navigator:
             return self.stop("HOLD", "Visual tracking unreliable")
         if np.linalg.norm(np.asarray(goal)-np.asarray(pose[:2])) < cfg.goal_tolerance:
             return self.stop("ARRIVED", "Goal tolerance reached")
+        if now is not None:
+            grid.decay(now, cfg.obstacle_decay_age)
         self.path = astar(grid, pose[:2], goal, cfg, risk_aware=self.risk_aware)
         if len(self.path) < 2:
             return self.stop("BLOCKED", "No feasible route in current map")
@@ -153,7 +169,7 @@ class Navigator:
         if abs(error) > 0.6:
             desired = 0.0
         speed = min(desired, self.speed + cfg.max_accel * max(0, min(dt, 0.25)))
-        blocked = grid.blocked(cfg.radius + cfg.margin)
+        blocked = grid.blocked(cfg.radius + cfg.margin, max_slope=getattr(cfg, 'max_slope_rad', None))
         # Swept centre samples out to latency + stopping distance. Unknown support vetoes.
         reach = max(grid.resolution*.5, speed*cfg.sensor_timeout + speed*speed/(2*cfg.braking_accel)) if speed > 0 else 0.0
         for d in np.linspace(0, reach, max(3, int(reach/grid.resolution*3))):
