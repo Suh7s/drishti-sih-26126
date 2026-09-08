@@ -1,0 +1,14 @@
+{
+  "mode": "capture",
+  "adapter": "isaac_6_0_1",
+  "goal": [
+    10,
+    0
+  ],
+  "body_prim": "/World/Spot/body",
+  "sensor": "rectified stereo RGB at 20 Hz",
+  "depth": "SGBM image-derived",
+  "pose": "PnP visual odometry, no loop closure",
+  "launch_pad_prior": "known flat one-metre radius; nominal settled body height 0.50m",
+  "locomotion": "installed NVIDIA flat-terrain policy; uses simulator proprioception internally"
+}

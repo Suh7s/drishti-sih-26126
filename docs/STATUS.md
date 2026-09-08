@@ -1,3 +1,15 @@
+# Ubuntu verification, 2026-09-08 (in progress)
+
+- Isaac Sim 6.0.1 is at `/home/s/isaacsim`; bundled Python 3.12.13, NumPy 1.26.4 and OpenCV 4.13.0. Host: Ubuntu 24.04.4, RTX 5080, driver 595.84, CUDA 13.2, 32 GB RAM.
+- All 19 portable tests pass after camera-frame, launch-prior, RGB conversion, stereo, and material changes.
+- NVIDIA's unmodified Spot test initialized the GPU pipeline but was killed while loading its large grid scene; this is an environment failure, not a walking pass.
+- Adapter fixes verified against installed source: sensor rates divide renderer rate, Camera initialization follows playback, RGB annotators return float LDR data, and legacy ROS cameras use +Z as viewing ray. Cameras are parented to `/World/Spot/body`.
+- `results/isaac_capture_004` contains the first clean adapter run: 34 synchronized telemetry rows, but all-black RGB from the conversion bug.
+- `results/isaac_capture_007` contains the first corrected rendered capture: 51 rows, valid SGBM depth 23.6--25.5% (median 1.26 m), but VO stayed `LOST`; Spot commanded zero.
+- `results/isaac_capture_009` and `results/isaac_capture_010` preserve material-backed/brighter attempts. RGB is nonzero, but valid disparity is roughly 2--7% and VO remains `LOST`; the safety gate holds Spot.
+- The required camera-only two-metre walking test has not passed. No autonomous or collision-free Isaac navigation claim is made. The installed flat-terrain Spot policy and asset are present, but an actual walking assertion remains pending.
+- `results/isaac_cinematic_warmup_001` preserves a separate presentation-camera warm-up from Isaac assets: `cinematic.mp4` is 1280x720, 20 fps, 82 frames; `camera_preview.mp4` is 1280x480, 20 fps, 34 frames. It is a stationary/hold capture and must not be labeled an autonomous navigation movie.
+
 # Implementation and evidence status at Mac handoff
 
 ## Implemented and locally exercised

@@ -1,7 +1,7 @@
 import unittest
 import cv2
 import numpy as np
-from drishti.vision import Calibration,StereoDepth,VisualOdometry,GroundMapper,estimate_motion,camera_mount
+from drishti.vision import Calibration,StereoDepth,VisualOdometry,GroundMapper,estimate_motion,camera_mount,camera_ros_mount
 from drishti.navigation import GridMap
 
 class VisionTests(unittest.TestCase):
@@ -37,7 +37,14 @@ class VisionTests(unittest.TestCase):
 
     def test_optical_frame_points_forward_downward(self):
         T=camera_mount()
-        self.assertGreater(T[0,2],.9);self.assertLess(T[2,2],0)
+        self.assertGreater(T[0,2],.6);self.assertLess(T[2,2],-.6)
+
+    def test_ros_render_mount_matches_optical_forward(self):
+        optical=camera_mount()[:3,:3]
+        ros=camera_ros_mount()[:3,:3]
+        # OpenCV +Z and ROS +X are both the physical viewing ray.
+        np.testing.assert_allclose(optical[:,2],ros[:,2],atol=1e-12)
+        self.assertLess(ros[2,2],-.6)
 
     def test_blank_vo_never_claims_tracking(self):
         c=Calibration();vo=VisualOdometry(c)

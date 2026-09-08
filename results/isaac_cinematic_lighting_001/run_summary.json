@@ -1,0 +1,12 @@
+{
+  "mode": "capture",
+  "sim_seconds": 7.019999843090773,
+  "stereo_frames": 134,
+  "cinematic_frames": 115,
+  "final_spot_world_position": [
+    0.04211035370826721,
+    0.556494951248169,
+    0.07000008225440979
+  ],
+  "truth_use": "presentation camera and post-run evaluator only; never navigation"
+}

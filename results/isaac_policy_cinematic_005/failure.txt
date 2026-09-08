@@ -1,0 +1,18 @@
+Traceback (most recent call last):
+  File "/home/s/drishti-sih-26126/isaac/run_spot.py", line 194, in <module>
+    movie.aim(sim_state["t"])
+  File "/home/s/drishti-sih-26126/isaac/cinematic.py", line 52, in aim
+    self.camera.set_world_pose(position=eye,orientation=orientation,camera_axes="usd")
+  File "/home/s/isaacsim/extsDeprecated/isaacsim.sensors.camera/isaacsim/sensors/camera/camera.py", line 803, in set_world_pose
+    return BaseSensor.set_world_pose(self, position, orientation)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/s/isaacsim/extsDeprecated/isaacsim.core.prims/isaacsim/core/prims/impl/single_prim_wrapper.py", line 305, in set_world_pose
+    orientation = self._backend_utils.convert(orientation, device=self._device)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/s/isaacsim/extsDeprecated/isaacsim.core.utils/isaacsim/core/utils/numpy/tensor.py", line 61, in convert
+    return as_type(np.asarray(data), dtype)
+                   ^^^^^^^^^^^^^^^^
+  File "/home/s/isaacsim/extsDeprecated/omni.isaac.ml_archive/pip_prebundle/torch/_tensor.py", line 1253, in __array__
+    return self.numpy()
+           ^^^^^^^^^^^^
+TypeError: can't convert cuda:0 device type tensor to numpy. Use Tensor.cpu() to copy the tensor to host memory first.

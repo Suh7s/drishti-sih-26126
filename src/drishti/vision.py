@@ -38,7 +38,7 @@ class StereoDepth:
         self.calib = calib
         common = dict(numDisparities=96, blockSize=5, P1=8*25, P2=32*25,
                       uniquenessRatio=10, speckleWindowSize=60, speckleRange=2,
-                      disp12MaxDiff=1, mode=cv2.STEREO_SGBM_MODE_SGBM_3WAY)
+                      disp12MaxDiff=2, mode=cv2.STEREO_SGBM_MODE_SGBM_3WAY)
         self.left = cv2.StereoSGBM_create(minDisparity=0, **common)
         self.right = cv2.StereoSGBM_create(minDisparity=-96, **common)
 
@@ -52,7 +52,7 @@ class StereoDepth:
         rx = np.rint(xx-d).astype(int)
         in_frame = (rx >= 0) & (rx < d.shape[1])
         rd_match = rd[yy, np.clip(rx,0,d.shape[1]-1)]
-        consistent = np.abs(d+rd_match) < 1.5
+        consistent = np.abs(d+rd_match) < 2.5
         depth = np.full(d.shape, np.nan, np.float32)
         valid = (d > 0.75) & (d < 95) & in_frame & consistent & (rd_match > -96)
         depth[valid] = self.calib.fx*self.calib.baseline/d[valid]
@@ -95,7 +95,7 @@ class VisualOdometry:
 
     def _anchor(self, g, depth):
         mask = (np.isfinite(depth).astype(np.uint8)*255)
-        pts = cv2.goodFeaturesToTrack(g, maxCorners=900, qualityLevel=0.012,
+        pts = cv2.goodFeaturesToTrack(g, maxCorners=900, qualityLevel=0.003,
                                     minDistance=7, mask=mask, blockSize=7)
         self.anchor_gray, self.anchor_depth, self.anchor_points = g.copy(), depth.copy(), pts
         return 0 if pts is None else len(pts)
@@ -175,15 +175,41 @@ class GroundMapper:
         # Persistent obstacle evidence is conservative; dynamic clearing is future work.
         self.grid.occupied |= occ
         self.grid.risk[seen] = np.clip(1.0-support[seen]/25,0,1)*0.25
-        return {"support_cells":int(seen.sum()),"hazard_cells":int(occ.sum())}
+        ground_z = z[ground]
+        # This is an image-derived check of the declared flat launch-pad prior.
+        # It is diagnostic only: it never changes the assumed plane or VO pose.
+        return {"support_cells":int(seen.sum()),"hazard_cells":int(occ.sum()),
+                "ground_points":int(ground_z.size),
+                "ground_z_median":float(np.median(ground_z)) if ground_z.size else float("nan"),
+                "ground_z_mad":float(np.median(np.abs(ground_z-np.median(ground_z)))) if ground_z.size else float("nan")}
 
 
-def camera_mount(height=0.65, forward=0.32, left=0.06, pitch_degrees=18.0):
-    """Optical frame x right,y down,z forward to robot x forward,y left,z up."""
+def _camera_pitch(pitch_degrees):
     a=np.deg2rad(pitch_degrees)
-    Ry=np.array([[np.cos(a),0,np.sin(a)],[0,1,0],[-np.sin(a),0,np.cos(a)]])
+    return np.array([[np.cos(a),0,np.sin(a)],[0,1,0],[-np.sin(a),0,np.cos(a)]])
+
+
+def camera_mount(height=0.65, forward=0.32, left=0.06, pitch_degrees=45.0):
+    """OpenCV optical frame (right, down, forward) to Spot body (forward, left, up).
+
+    This transform belongs to stereo unprojection and PnP. It must not be
+    passed directly to Isaac's Camera with ``camera_axes='ros'``.
+    """
     optical=np.array([[0,0,1],[-1,0,0],[0,-1,0]])
     T=np.eye(4)
-    T[:3,:3]=Ry@optical
+    T[:3,:3]=_camera_pitch(pitch_degrees)@optical
+    T[:3,3]=[forward,left,height]
+    return T
+
+
+def camera_ros_mount(height=0.65, forward=0.32, left=0.06, pitch_degrees=45.0):
+    """Isaac legacy Camera ``ros`` axes to Spot body.
+
+    That API defines +Y up and +Z forward, so its local basis is (left, up,
+    forward). Its +Z viewing ray therefore agrees with OpenCV optical +Z.
+    """
+    T=np.eye(4)
+    ros_from_optical=np.diag([-1.0,-1.0,1.0])
+    T[:3,:3]=camera_mount(0,0,0,pitch_degrees)[:3,:3]@ros_from_optical
     T[:3,3]=[forward,left,height]
     return T

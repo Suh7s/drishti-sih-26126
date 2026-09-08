@@ -1,0 +1,12 @@
+{
+  "mode": "policy_demo",
+  "sim_seconds": 12.029999731108546,
+  "stereo_frames": 301,
+  "cinematic_frames": 199,
+  "final_spot_world_position": [
+    0.261867493391037,
+    0.6111436486244202,
+    0.06999975442886353
+  ],
+  "truth_use": "presentation camera and post-run evaluator only; never navigation"
+}

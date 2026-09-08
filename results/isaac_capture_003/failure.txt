@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "/home/s/drishti-sih-26126/isaac/run_spot.py", line 123, in <module>
+    c=Camera(prim_path=str(body.GetPath())+f"/drishti_{name}",name=name,resolution=(640,480),frequency=25)
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/s/isaacsim/extsDeprecated/isaacsim.sensors.camera/isaacsim/sensors/camera/camera.py", line 261, in __init__
+    self.set_frequency(frequency)
+  File "/home/s/isaacsim/extsDeprecated/isaacsim.sensors.camera/isaacsim/sensors/camera/camera.py", line 401, in set_frequency
+    raise Exception("frequency of the camera sensor needs to be a divisor of the rendering frequency.")
+Exception: frequency of the camera sensor needs to be a divisor of the rendering frequency.
