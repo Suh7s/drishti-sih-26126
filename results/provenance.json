@@ -1,0 +1,16 @@
+{
+  "disclosure": "2-D synthetic-observation planning harness. Exact pose. No camera inference, SLAM, Spot physics or real-world validation.",
+  "episodes": 24,
+  "seeds": [
+    7,
+    8,
+    9
+  ],
+  "implemented_controller": "A* and heading controller",
+  "not_implemented_in_harness": [
+    "camera inference",
+    "visual SLAM",
+    "legged dynamics",
+    "learned uncertainty"
+  ]
+}
