@@ -40,9 +40,9 @@ This opens a local evidence viewer with the **recorded baseline** video and sync
 | Planning | Inflated A*, slope/risk costs, observed-footprint and braking-envelope checks | Expired obstacle evidence becomes unknown; repeated ground observations are required to clear occupancy. |
 | Simulation | Wheeled rover, calibrated stereo pair, collidable height field, debris and water exclusion zone | A separate Supervisor evaluates truth; navigation cannot read it. No fluid, soil or flood-current physics. |
 
-### Measured baseline
+### Measured baseline (Forest Course)
 
-The existing forest course contains flat, static obstacles. Its results belong to the baseline revision, **not** the new disaster scene:
+The initial course contains flat, static obstacles:
 
 | Result | Measured value |
 |---|---:|
@@ -51,9 +51,23 @@ The existing forest course contains flat, static obstacles. Its results belong t
 | Conservative obstacle clearance | 37.83 cm |
 | Goal distance | 36.38 cm |
 
-![Independent trajectory comparison and error](docs/assets/evaluation.png)
+Raw baseline measurements are in [`results/submission_run`](results/submission_run).
 
-Raw baseline measurements are in [`results/submission_run`](results/submission_run). Current disaster validation is reported separately in [STATUS](docs/STATUS.md). Test success alone does not establish collision-free navigation.
+### Measured Disaster Mission (`disaster_validation_06`)
+
+The primary SIH 26126 validation evaluates autonomous navigation across rough, flood-carved terrain with slopes, boulders, fallen timber, concrete ruins, and mud pools:
+
+| Metric | Measured Value |
+|---|---:|
+| Mission time | 36.86 simulation seconds |
+| Goal status | Reached (10.0 m checkpoint verified by Supervisor) |
+| Position RMSE, without trajectory alignment | 2.65 cm |
+| Continuous tracking fraction | 99.74% |
+| Solid obstacle clearance | +7.08 cm |
+| Maximum body tilt | 7.49° |
+| Median vision compute latency | 77.1 ms |
+
+View the interactive offline demonstration with synchronized telemetry via `python run.py demo` (or open `demo/index.html`). Full audit status in [STATUS](docs/STATUS.md).
 
 ### Repository map
 

@@ -4,7 +4,7 @@ from pathlib import Path
 HERE=Path(__file__).resolve().parent
 p=HERE/'run-data.json'
 if not p.exists():
-    root=HERE.parent/'results/submission_run'
+    root=HERE.parent/'results/disaster_validation_06'
     data={'score':json.loads((root/'evaluation.json').read_text()),
           'navigation':[json.loads(x) for x in (root/'navigation.jsonl').read_text().splitlines()],
           'truth':[json.loads(x) for x in (root/'ground_truth.jsonl').read_text().splitlines()]}
