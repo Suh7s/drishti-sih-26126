@@ -2,6 +2,7 @@
 import argparse
 from datetime import datetime
 import json
+import hashlib
 import os
 from pathlib import Path
 import shutil
@@ -40,6 +41,12 @@ settings={'output':str(out),'record':a.record,'exit':a.exit,'world':a.world,'tim
           'slam':'Visual SLAM with keyframes and loop closure',
           'ground_support':'slope-aware RANSAC ground plane and dynamic obstacle decay',
           'python':sys.version.split()[0]}
+settings['source_sha256']={str(f.relative_to(HERE.parent)):hashlib.sha256(f.read_bytes()).hexdigest()
+    for f in [*sorted((HERE.parent/'src/drishti').glob('*.py')),HERE/'controllers/rover/rover.py',
+              HERE/'controllers/evaluator/evaluator.py',HERE/'tools/evaluate.py',world,
+              HERE.parent/'src/drishti/models/perception_weights.npz']}
+settings['navigation_config']={'radius_m':.44,'margin_m':.24,'max_speed_m_s':.28,
+                               'semantic_patch_size_px':40,'ground_projection_radius_m':2.0}
 config=out/'config.json';config.write_text(json.dumps(settings,indent=2)+'\n')
 print('Run outputs:',out,flush=True)
 if a.prepare_only:

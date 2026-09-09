@@ -9,6 +9,8 @@ def evaluate(folder):
     truth=[json.loads(l) for l in (folder/'ground_truth.jsonl').read_text().splitlines()]
     cfg_file=folder/'config.json'
     cfg=json.loads(cfg_file.read_text()) if cfg_file.exists() else {}
+    nav=[r for r in nav if r['t'] <= min(truth[-1]['t'], cfg.get('time_limit',float('inf')))]
+    if not nav or not truth: raise ValueError('No overlapping navigation and truth samples')
     goal=np.array(cfg.get('goal', [8, 0]), float)
     world_name=cfg.get('world', 'static_flat_two_obstacles')
 
@@ -68,6 +70,9 @@ def evaluate(folder):
         'path_length_m':float(np.linalg.norm(np.diff(actual,axis=0),axis=1).sum()),
         'perception_ai_active':has_perception,
         'slam_keyframes':keyframes,
+        'map_replans':max(r.get('map_replans',0) for r in nav),
+        'first_hazard_time_s':next((r['t'] for r in nav if r.get('hazard_cells',0)>0),None),
+        'first_map_replan_time_s':next((r['t'] for r in nav if r.get('map_replans',0)>0),None),
         'slam_loop_closures':loops,
         'slam_relocalizations':relocs,
         'max_estimated_local_plane_slope_deg':max_slope,

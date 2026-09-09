@@ -102,6 +102,25 @@ def pose(x, y, z, geom, color, extra="", rot=None):
     return f"Pose {{ translation {x} {y} {z} {rot_str}children [ {shape(geom, color, extra)} ] }}"
 
 
+def rock_mesh(sx,sy,sz,seed=0):
+    """Faceted stone entirely contained in its conservative collision box."""
+    noise=np.random.default_rng(seed);verts=[]
+    for level, radius in [(-.5,.78),(-.1,1.0),(.5,.70)]:
+        for j in range(8):
+            a=j*np.pi/4
+            r=radius*noise.uniform(.91,1)
+            verts.append((.5*sx*r*np.cos(a),.5*sy*r*np.sin(a),sz*level))
+    faces=[]
+    for ring in range(2):
+        for j in range(8):
+            a=ring*8+j;b=ring*8+(j+1)%8
+            faces += [(a,b,b+8),(a,b+8,a+8)]
+    faces += [tuple(reversed(range(8))),tuple(range(16,24))]
+    points=' '.join(' '.join(f'{v:.4f}' for v in p) for p in verts)
+    indices=' '.join(' '.join(map(str,f))+' -1' for f in faces)
+    return f'IndexedFaceSet {{ coord Coordinate {{ point [ {points} ] }} coordIndex [ {indices} ] creaseAngle .3 }}'
+
+
 def terrain_height(x, y):
     """Deterministic collidable terrain; flat surveyed launch zone."""
     x, y = np.asarray(x), np.asarray(y)
@@ -141,6 +160,7 @@ Fog { color 0.42 0.48 0.52 visibilityRange 48 }
                 'terrain': {'type': 'ElevationGrid', 'sample_spacing_m': .2,
                             'min_height_m': float(heights.min()), 'max_height_m': float(heights.max())},
                 'hazards': [
+                    {'name':'goal_marker_exclusion', 'kind':'circle', 'center':[11.0,1.1], 'radius':.25},
                     {'name':'boulder', 'kind':'box', 'center':[3.5,.55], 'half_size':[.4,.4]},
                     {'name':'fallen_log', 'kind':'box', 'center':[7.2,1.3], 'half_size':[.24,.9]},
                     {'name':'ruin', 'kind':'box', 'center':[8.2,-1.4], 'half_size':[.375,.55], 'yaw':.42},
@@ -175,7 +195,7 @@ Fog { color 0.42 0.48 0.52 visibilityRange 48 }
         metalness 0.05
         baseColorMap ImageTexture {{ url [ "textures/boulder.jpg" ] }}
       }}
-      geometry Box {{ size 0.80 0.80 0.65 }}
+      geometry {rock_mesh(.8,.8,.65,1)}
     }}
   ]
   name "hazard_boulder_0"
@@ -189,7 +209,8 @@ Fog { color 0.42 0.48 0.52 visibilityRange 48 }
   children [
     Shape {{
       appearance PBRAppearance {{
-        baseColor .28 .22 .16
+        baseColor .75 .65 .55
+        baseColorMap ImageTexture {{ url [ "../protos/textures/oak_trunk.jpg" ] }}
         roughness 0.85
         metalness 0.02
       }}
@@ -237,7 +258,7 @@ Fog { color 0.42 0.48 0.52 visibilityRange 48 }
         roughness 0.9
         baseColorMap ImageTexture {{ url [ "textures/boulder.jpg" ] }}
       }}
-      geometry Box {{ size {sx} {sy} {sz} }}
+      geometry {rock_mesh(sx,sy,sz,i+2)}
     }}
   ]
   name "debris_rock_{i}"
@@ -250,8 +271,8 @@ Fog { color 0.42 0.48 0.52 visibilityRange 48 }
     # Goal Disaster Relief Checkpoint Marker (high-visibility safety orange beacon)
     # Pole and flag marker are offset to the edge of the landing circle
     w.append(pose(10.0, 0, 0.008, "Cylinder { radius 0.75 height 0.016 subdivision 48 }", ".95 .45 .12"))
-    w.append(pose(10.55, 0.45, 0.45, "Cylinder { radius 0.035 height 0.90 subdivision 16 }", ".15 .18 .20"))
-    w.append(pose(10.55, 0.45, 0.92, "Box { size 0.42 0.02 0.24 }", ".98 .42 .10"))
+    w.append(pose(11.0, 1.1, 0.45, "Cylinder { radius 0.035 height 0.90 subdivision 16 }", ".15 .18 .20"))
+    w.append(pose(11.0, 1.1, 0.92, "Box { size 0.42 0.02 0.24 }", ".98 .42 .10"))
 
     # DRISHTI ROVER
     w.append("""DEF ROVER Robot {

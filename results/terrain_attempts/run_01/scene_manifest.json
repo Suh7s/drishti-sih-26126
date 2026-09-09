@@ -9,15 +9,6 @@
   },
   "hazards": [
     {
-      "name": "goal_marker_exclusion",
-      "kind": "circle",
-      "center": [
-        11.0,
-        1.1
-      ],
-      "radius": 0.25
-    },
-    {
       "name": "boulder",
       "kind": "box",
       "center": [

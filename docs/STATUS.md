@@ -6,10 +6,10 @@
 
 ## 2.0 integration
 
-- 40 automated tests pass, including new regressions for stale-obstacle safety, steep-cell inflation, goal integrity, rigid pose corrections, landmark consistency and elevated ground-plane fitting.
+- 41 automated tests pass, including new regressions for stale-obstacle safety, steep-cell inflation, goal integrity, rigid pose corrections, landmark consistency and elevated ground-plane fitting.
 - The 40-feature MLP report is in `src/drishti/models/perception_weights.json`: 8,000 procedural image/depth training patches and 2,000 held-out patches; 99.5% held-out accuracy in that narrow synthetic domain.
 - The disaster world now contains a collision-enabled ElevationGrid, and evaluation consumes its generated hazard manifest.
-- The current disaster physics run is being evaluated. No successful rough-terrain mission is asserted until its independent measurements are archived here.
+- Development terrain runs reached the goal with approximately 2–3 cm RMSE, but failed the full clearance criterion. Their failure summaries are preserved in `results/terrain_attempts`. A follow-up run is validating persistent hazard buffers; no successful rough-terrain mission is asserted yet.
 
 ## Not yet demonstrated
 

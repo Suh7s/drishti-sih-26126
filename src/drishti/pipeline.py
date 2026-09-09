@@ -36,6 +36,7 @@ class CameraNavigation:
         self.launch_prior_error = None
         self.trajectory = []
         self.map_revision = 0
+        self.map_replans = 0
 
     def process(self, left, right, timestamp, sensor_age=0.0):
         if self.last_stamp is not None and timestamp <= self.last_stamp:
@@ -57,11 +58,13 @@ class CameraNavigation:
 
         # 3. Perception AI semantic segmentation
         semantic_costs = None
+        water_confidence = None
         perception_stats = {}
         if self.use_perception and self.perception is not None:
             sem_grid, conf_grid, sem_mask = self.perception.segment_frame(left, depth, patch_size=40)
             self.latest_semantic_mask = sem_mask
             semantic_costs = self.perception.compute_traversability_cost(conf_grid)
+            water_confidence = conf_grid[:,:,CLASS_WATER_MUD]
             total_patches = float(sem_grid.size)
             perception_stats = {
                 "traversable_fraction": float(np.sum(sem_grid == CLASS_TRAVERSABLE) / total_patches),
@@ -70,6 +73,7 @@ class CameraNavigation:
                 "vegetation_fraction": float(np.sum(sem_grid == CLASS_VEGETATION) / total_patches)
             }
 
+        occupied_before = self.grid.occupied.copy()
         # 4. Multi-modal ground and obstacle mapping
         map_stats = {}
         revised = self.use_slam and self.slam.map_revision != self.map_revision
@@ -84,7 +88,7 @@ class CameraNavigation:
                                    expected_ground_z=float(kb[2, 3] - self.initial_base_height))
             self.map_revision = self.slam.map_revision
         if q >= self.navigator.cfg.min_quality:
-            map_stats = self.mapper.update(depth, T, timestamp, semantic_cost_map=semantic_costs,
+            map_stats = self.mapper.update(depth, T, timestamp, semantic_cost_map=semantic_costs, water_confidence=water_confidence,
                                            expected_ground_z=float(base[2, 3] - self.initial_base_height))
 
         if not self.bootstrap_done and map_stats:
@@ -112,6 +116,10 @@ class CameraNavigation:
                     **slam_diag, **perception_stats, **map_stats
                 }, depth
 
+        changed_cells = int(np.count_nonzero(self.grid.occupied != occupied_before))
+        if changed_cells: self.map_replans += 1
+        map_stats['occupancy_changed_cells'] = changed_cells
+        map_stats['map_replans'] = self.map_replans
         # 5. Planning and motion control
         cmd = self.navigator.command(self.grid, pose, self.goal, q, sensor_age, dt, now=timestamp)
 

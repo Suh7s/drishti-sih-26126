@@ -2,7 +2,7 @@
 import unittest
 import numpy as np
 import cv2
-from drishti.navigation import GridMap, Config, astar
+from drishti.navigation import GridMap, Config, Navigator, astar
 from drishti.slam import VisualSLAM, Keyframe
 from drishti.vision import Calibration, fit_ground_plane_ransac
 from drishti.perception import PerceptionModel
@@ -12,6 +12,7 @@ class RevisionSafetyTests(unittest.TestCase):
         g=GridMap(20,20,.25);g.observed[:]=True;g.last_seen[:]=0;g.occupied[10,10]=True
         g.decay(5,3)
         self.assertFalse(g.occupied[10,10]);self.assertFalse(g.observed[10,10])
+        self.assertTrue(g.blocked(.5)[10,11])
         self.assertFalse(g.footprint_observed(g.xy((10,10)),.1,now=5,max_age=float('inf')))
 
     def test_steep_terrain_inflates_robot_footprint(self):
@@ -47,6 +48,14 @@ class RevisionSafetyTests(unittest.TestCase):
         self.assertAlmostEqual(-fit[3]/fit[2],.6,places=2)
         self.assertAlmostEqual(fit[5],np.arctan(.12),places=2)
         self.assertIsNone(fit_ground_plane_ransac(p,cam_xy=[0,0],expected_ground_z=0))
+
+    def test_lookahead_cannot_cross_unobserved_ground(self):
+        g=GridMap(40,40,.1,(0,0));g.observed[:]=True
+        nav=Navigator(Config(radius=.05,margin=.01))
+        nav.path=[[1.05,1.05],[1.15,1.05],[1.55,1.05]]
+        g.observed[g.cell([1.35,1.05])]=False
+        target=nav.select_target(g,np.array(nav.path[0]),g.blocked(.06))
+        np.testing.assert_allclose(target,nav.path[1])
 
     def test_classifier_rejects_invalid_features(self):
         with self.assertRaises(ValueError):PerceptionModel().forward(np.full((1,40),np.nan))

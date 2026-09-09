@@ -194,7 +194,7 @@ class GroundMapper:
         self.hazard_votes = np.zeros(grid.occupied.shape, np.uint8)
         self.free_votes = np.zeros(grid.occupied.shape, np.uint8)
 
-    def update(self, depth, T_world_camera, timestamp, semantic_cost_map=None, expected_ground_z=None):
+    def update(self, depth, T_world_camera, timestamp, semantic_cost_map=None, expected_ground_z=None, water_confidence=None):
         """Slope-aware and semantic ground mapping with dynamic evidence clearing.
 
         Fits local ground plane via RANSAC on rough terrain, detects positive
@@ -241,6 +241,24 @@ class GroundMapper:
             hazard = np.zeros(len(world), bool)
             slope = 0.0
 
+        if water_confidence is not None:
+            gh,gw = water_confidence.shape
+            py=np.clip(uv[:,1]*gh//self.c.height,0,gh-1)
+            px=np.clip(uv[:,0]*gw//self.c.width,0,gw-1)
+            water = water_confidence[py,px] >= .9
+            counts=np.zeros(shape,np.int32)
+            np.add.at(counts,(cells[water,1],cells[water,0]),1)
+            _, labels, stats, _ = cv2.connectedComponentsWithStats((counts >= 5).astype(np.uint8),8)
+            coherent=np.zeros(shape,bool)
+            for component in range(1,len(stats)):
+                if stats[component,cv2.CC_STAT_AREA] >= 4:
+                    coherent |= labels == component
+            water &= coherent[cells[:,1],cells[:,0]]
+            # Semantics are an experimental risk cue, not certified geometry.
+            # Inflate the cost by the rover footprint so its body skirts water.
+            expanded=cv2.dilate(coherent.astype(np.uint8),
+                cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(7,7))).astype(bool)
+            self.grid.risk[expanded]=np.maximum(self.grid.risk[expanded],1.0)
         np.add.at(support, (cells[ground, 1], cells[ground, 0]), 1)
         np.add.at(obstacle, (cells[hazard, 1], cells[hazard, 0]), 1)
 
@@ -268,6 +286,7 @@ class GroundMapper:
         cleared = seen & (self.free_votes >= 3)
         self.hazard_votes[cleared] = 0
         self.grid.occupied[cleared] = False
+        self.grid.unresolved_hazards[cleared] = False
 
         occ = candidate & (self.hazard_votes >= 2)
         self.grid.observed |= seen | occ

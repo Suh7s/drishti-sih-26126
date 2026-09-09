@@ -30,14 +30,16 @@ cal = Calibration(f,f,320,200,.16,640,400)
 goal = tuple(settings.get('goal', [10.0, 0.0]))
 nav = CameraNavigation(cal, goal=goal, initial_base_height=.13,
     mount=camera_mount(height=.62,forward=.29,left=.08,pitch_degrees=45),
-    config=Config(radius=.44,margin=.12,max_speed=.28,max_yaw_rate=.55,goal_tolerance=.45,
+    config=Config(radius=.44,margin=.24,max_speed=.28,max_yaw_rate=.55,goal_tolerance=.45,
                   support_max_age=float('inf'),
-                  slope_weight=3.5, max_slope_rad=0.52))
+                  risk_weight=12.0, slope_weight=3.5, max_slope_rad=0.52))
 log = (out/'navigation.jsonl').open('w', buffering=1)
 video = cv2.VideoWriter(str(out/'perception.mp4'),cv2.VideoWriter_fourcc(*'mp4v'),1000/(step*3),(1280,400)) if settings.get('record') else None
 frame = 0
 try:
     while robot.step(step) != -1:
+        if robot.getTime() >= settings.get('time_limit',140):
+            break
         if robot.getTime() < .96 or int(round(robot.getTime()*1000/step))%3:
             continue
         images=[]
@@ -66,7 +68,7 @@ try:
             cv2.imwrite(str(out/'left.jpg'),cv2.cvtColor(images[0],cv2.COLOR_RGB2BGR))
             cv2.imwrite(str(out/'right.jpg'),cv2.cvtColor(images[1],cv2.COLOR_RGB2BGR))
             np.savez_compressed(out/'diagnostics.npz',depth=depth,observed=nav.grid.observed,
-                                occupied=nav.grid.occupied,pose=row['pose'])
+                                occupied=nav.grid.occupied,unresolved=nav.grid.unresolved_hazards,pose=row['pose'])
             (out/'state.json').write_text(json.dumps(row))
         frame+=1
         if row['state']=='ARRIVED':

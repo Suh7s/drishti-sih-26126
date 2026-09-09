@@ -1,0 +1,18 @@
+{
+  "output": "/Users/suhas/Documents/Codex/2026-09-08/problem-statement-id-26126-problem-statement/outputs/drishti-v2/results/disaster_validation_04",
+  "record": true,
+  "exit": true,
+  "world": "disaster",
+  "time_limit": 140,
+  "camera_hz": 10.416666666666666,
+  "goal": [
+    10,
+    0
+  ],
+  "seed": 26126,
+  "sensor_input": "rectified RGB pair",
+  "perception_ai": "40-feature MLP semantic segmentation (Traversable/Obstacle/Mud/Vegetation)",
+  "slam": "Visual SLAM with keyframes and loop closure",
+  "ground_support": "slope-aware RANSAC ground plane and dynamic obstacle decay",
+  "python": "3.13.7"
+}

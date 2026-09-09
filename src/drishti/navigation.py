@@ -37,6 +37,7 @@ class GridMap:
         self.resolution, self.origin = resolution, np.asarray(origin, float)
         self.observed = np.zeros((height, width), bool)
         self.occupied = np.zeros((height, width), bool)
+        self.unresolved_hazards = np.zeros((height, width), bool)
         self.risk = np.zeros((height, width), float)
         self.slope = np.zeros((height, width), float)
         self.semantic_cost = np.zeros((height, width), float)
@@ -56,7 +57,7 @@ class GridMap:
     def blocked(self, radius, max_slope=None):
         """Inflate occupied cells and map edge by footprint plus caller margin."""
         n = int(math.ceil(radius / self.resolution))
-        source = self.occupied.copy()
+        source = self.occupied | self.unresolved_hazards
         if max_slope is not None:
             source |= (self.slope > max_slope)
         out = source.copy()
@@ -76,6 +77,7 @@ class GridMap:
         """Decay stale obstacle occupancy to accommodate dynamic obstacles."""
         if not math.isinf(max_age) and max_age > 0:
             stale = (now - self.last_seen > max_age) & self.occupied
+            self.unresolved_hazards[stale] = True
             self.occupied[stale] = False
             self.observed[stale] = False
             self.last_seen[stale] = -np.inf
@@ -148,6 +150,22 @@ class Navigator:
         self.speed, self.state, self.reason = 0.0, state, reason
         return np.zeros(3)
 
+    def select_target(self, grid, position, blocked, now=None):
+        """Smooth grid turns only when the complete shortcut is verified."""
+        target = np.asarray(self.path[1])
+        for candidate in self.path[2:]:
+            candidate = np.asarray(candidate)
+            distance = np.linalg.norm(candidate - position)
+            if distance > .8: break
+            samples = np.linspace(position, candidate, max(3, int(distance / .05) + 1))
+            if all(grid.inside(grid.cell(q)) and not blocked[grid.cell(q)] and
+                   grid.footprint_observed(q,self.cfg.radius,now,self.cfg.support_max_age)
+                   for q in samples):
+                target = candidate
+            else:
+                break
+        return target
+
     def command(self, grid, pose, goal, quality, sensor_age, dt=0.1, now=None):
         cfg = self.cfg
         if not np.all(np.isfinite(pose)) or not np.isfinite(quality) or not np.isfinite(sensor_age):
@@ -164,8 +182,8 @@ class Navigator:
         if len(self.path) < 2:
             return self.stop("BLOCKED", "No feasible route in current map")
         p = np.asarray(pose[:2])
-        # Adjacent waypoint keeps the target inside the verified grid corridor.
-        target = np.asarray(self.path[1])
+        blocked = grid.blocked(cfg.radius + cfg.margin, max_slope=cfg.max_slope_rad)
+        target = self.select_target(grid,p,blocked,now)
         heading = math.atan2(*(target-p)[::-1])
         error = wrap(heading-pose[2])
         omega = float(np.clip(2.0*error, -cfg.max_yaw_rate, cfg.max_yaw_rate))
