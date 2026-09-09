@@ -27,6 +27,12 @@ out=(a.output or HERE.parent/'results'/datetime.now().strftime('webots_run_%Y%m%
 if out.exists() and any(out.iterdir()):
     p.error('Output folder is nonempty; use a new folder to preserve previous evidence.')
 out.mkdir(parents=True,exist_ok=True)
+# Rebuild the canonical generated scene so GUI autosaves cannot move the start.
+if a.world == 'disaster':
+    shutil.copy2(world, out/'world_before_reset.wbt')
+    subprocess.run([sys.executable, str(HERE/'tools/build_disaster_world.py')], check=True)
+manifest=world.with_suffix('.manifest.json')
+if manifest.exists(): shutil.copy2(manifest,out/'scene_manifest.json')
 goal=[10,0] if a.world=='disaster' else [8,0]
 settings={'output':str(out),'record':a.record,'exit':a.exit,'world':a.world,'time_limit':a.time_limit,
           'camera_hz':1000/96,'goal':goal,'seed':26126,'sensor_input':'rectified RGB pair',

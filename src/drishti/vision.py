@@ -160,7 +160,7 @@ def fit_ground_plane_ransac(points, cam_xy=None, expected_ground_z=0.0, max_iter
             if normal[2] < 0.65:
                 continue
             d = -float(np.dot(normal, p1))
-            dists = np.abs(points @ normal + d)
+            dists = np.abs(np.einsum("ij,j->i", points, normal) + d)
             inliers = int(np.sum(dists < inlier_thresh))
             if inliers > best_inliers:
                 best_inliers = inliers
@@ -169,7 +169,15 @@ def fit_ground_plane_ransac(points, cam_xy=None, expected_ground_z=0.0, max_iter
                     break
 
     if best_plane is not None and best_inliers >= 18:
-        pa, pb, pc, pd = best_plane
+        normal = np.array(best_plane[:3])
+        inlier_points = points[np.abs(np.einsum("ij,j->i", points, normal) + best_plane[3]) < inlier_thresh]
+        center = inlier_points.mean(axis=0)
+        _, _, vh = np.linalg.svd(inlier_points - center, full_matrices=False)
+        normal = vh[-1]
+        if normal[2] < 0: normal = -normal
+        if normal[2] < .65: return None
+        pa, pb, pc = normal
+        pd = -float(normal @ center)
         # Ground plane plausibility check: plane at vehicle location must be near ground_z
         if cam_xy is not None:
             z_at_cam = -(pa * cam_xy[0] + pb * cam_xy[1] + pd) / pc
@@ -184,8 +192,9 @@ class GroundMapper:
     def __init__(self, grid, calibration, ground_z=0.0):
         self.grid, self.c, self.ground_z = grid, calibration, ground_z
         self.hazard_votes = np.zeros(grid.occupied.shape, np.uint8)
+        self.free_votes = np.zeros(grid.occupied.shape, np.uint8)
 
-    def update(self, depth, T_world_camera, timestamp, semantic_cost_map=None):
+    def update(self, depth, T_world_camera, timestamp, semantic_cost_map=None, expected_ground_z=None):
         """Slope-aware and semantic ground mapping with dynamic evidence clearing.
 
         Fits local ground plane via RANSAC on rough terrain, detects positive
@@ -198,6 +207,9 @@ class GroundMapper:
         uv = np.column_stack((cols[mask], rows[mask]))
         points = unproject(uv, depth[mask], self.c)
         world = np.einsum('ij,kj->ik', points, T_world_camera[:3, :3]) + T_world_camera[:3, 3]
+        # A single local tangent plane cannot certify distant curved terrain.
+        local = np.linalg.norm(world[:, :2] - T_world_camera[:2, 3], axis=1) <= 2.0
+        world, uv, points = world[local], uv[local], points[local]
         cells = np.floor((world[:, :2] - self.grid.origin) / self.grid.resolution).astype(int)
         valid = (cells[:, 0] >= 0) & (cells[:, 0] < self.grid.width) & (cells[:, 1] >= 0) & (cells[:, 1] < self.grid.height)
         cells, world, uv, points = cells[valid], world[valid], uv[valid], points[valid]
@@ -212,7 +224,7 @@ class GroundMapper:
         # Local ground plane estimation via RANSAC on near-field support
         near_mask = (points[:, 2] > 0.5) & (points[:, 2] < 3.8) & (np.abs(points[:, 0]) < 1.8)
         cam_xy = T_world_camera[:2, 3]
-        plane_fit = fit_ground_plane_ransac(world[near_mask], cam_xy=cam_xy, expected_ground_z=self.ground_z) if np.sum(near_mask) >= 25 else None
+        plane_fit = fit_ground_plane_ransac(world[near_mask], cam_xy=cam_xy, expected_ground_z=self.ground_z if expected_ground_z is None else expected_ground_z) if np.sum(near_mask) >= 25 else None
 
         if plane_fit is not None:
             pa, pb, pc, pd, _, slope = plane_fit
@@ -224,9 +236,9 @@ class GroundMapper:
             if np.any(ground):
                 self.grid.slope[cells[ground, 1], cells[ground, 0]] = slope
         else:
-            z_diff = world[:, 2] - self.ground_z
-            ground = np.abs(z_diff) < 0.10
-            hazard = ((z_diff > 0.16) & (z_diff < 1.3)) | (z_diff < -0.15)
+            # Without a plausible plane, no new ground is certified.
+            ground = np.zeros(len(world), bool)
+            hazard = np.zeros(len(world), bool)
             slope = 0.0
 
         np.add.at(support, (cells[ground, 1], cells[ground, 0]), 1)
@@ -238,9 +250,11 @@ class GroundMapper:
             py = np.clip(uv[:, 1] * gh // self.c.height, 0, gh - 1)
             px = np.clip(uv[:, 0] * gw // self.c.width, 0, gw - 1)
             costs = semantic_cost_map[py, px]
-            np.maximum.at(self.grid.risk, (cells[:, 1], cells[:, 0]), costs * 0.75)
-            sem_hazard = costs > 0.85
-            np.add.at(obstacle, (cells[sem_hazard, 1], cells[sem_hazard, 0]), 2)
+            np.maximum.at(self.grid.risk, (cells[:, 1], cells[:, 0]), costs * 0.85)
+            # High semantic obstacle confidence reinforcing geometric hazard
+            sem_geo_hazard = (costs > 0.90) & hazard
+            if np.any(sem_geo_hazard):
+                np.add.at(obstacle, (cells[sem_geo_hazard, 1], cells[sem_geo_hazard, 0]), 2)
 
         total = np.zeros(shape, int)
         np.add.at(total, (cells[:, 1], cells[:, 0]), 1)
@@ -249,8 +263,11 @@ class GroundMapper:
 
         self.hazard_votes[candidate] = np.minimum(self.hazard_votes[candidate].astype(int) + 1, 3)
         # Free-space clearing: actively observed ground clears stale obstacle votes
-        self.hazard_votes[seen] = 0
-        self.grid.occupied[seen] = False
+        self.free_votes[~seen] = 0
+        self.free_votes[seen] = np.minimum(self.free_votes[seen].astype(int) + 1, 3)
+        cleared = seen & (self.free_votes >= 3)
+        self.hazard_votes[cleared] = 0
+        self.grid.occupied[cleared] = False
 
         occ = candidate & (self.hazard_votes >= 2)
         self.grid.observed |= seen | occ
@@ -269,7 +286,8 @@ class GroundMapper:
             "ground_points": int(diagnostic_z.size),
             "ground_z_median": float(np.median(diagnostic_z)) if diagnostic_z.size else float("nan"),
             "ground_z_mad": float(np.median(np.abs(diagnostic_z - np.median(diagnostic_z)))) if diagnostic_z.size else float("nan"),
-            "local_slope_deg": float(np.rad2deg(slope))
+            "local_slope_deg": float(np.rad2deg(slope)),
+            "ground_plane_valid": plane_fit is not None
         }
 
 

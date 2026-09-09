@@ -2,7 +2,7 @@
 
 Identifies traversable paths, flood mud/water hazards, obstacles, and vegetation
 using hybrid color-space, texture, and stereo geometry features with an MLP classifier.
-Pure NumPy and OpenCV execution with sub-millisecond inference time.
+Pure NumPy and OpenCV execution. Runtime and accuracy require measurement.
 """
 from pathlib import Path
 import numpy as np
@@ -22,11 +22,13 @@ CLASS_COLORS = {
     CLASS_VEGETATION:  (20, 200, 210),  # Yellowish Green
 }
 
+GABOR_KERNELS = [cv2.getGaborKernel((7,7),2.0,a,w,0.5,0,ktype=cv2.CV_32F) for a in (0,np.pi/4,np.pi/2,3*np.pi/4) for w in (3,6)]
+
 DEFAULT_WEIGHTS_PATH = Path(__file__).resolve().parent / "models" / "perception_weights.npz"
 
 
 def extract_patch_features(rgb_patch, depth_patch=None):
-    """Extract a 32-dimensional feature vector from an image patch + depth patch.
+    """Extract a 40-dimensional feature vector from an image patch + depth patch.
 
     Features:
     - 0..5:   HSV mean and standard deviation (6)
@@ -35,6 +37,7 @@ def extract_patch_features(rgb_patch, depth_patch=None):
     - 23..24: RGB channel ratios (G/R, B/R) for water/foliage detection (2)
     - 25..31: Geometric features from depth: valid_frac, mean_depth, depth_std,
               dx_gradient, dy_gradient, plane_roughness, height_proxy (7)
+    - 32..39: Gabor response energies (4 orientations x 2 wavelengths)
     """
     hsv = cv2.cvtColor(rgb_patch, cv2.COLOR_RGB2HSV)
     h_chan, s_chan, v_chan = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
@@ -100,7 +103,8 @@ def extract_patch_features(rgb_patch, depth_patch=None):
         valid_frac, z_mean, z_std, dz_dx, dz_dy, plane_rough, height_proxy
     ], dtype=np.float32)
 
-    return feat
+    energies = [float(np.mean(np.abs(cv2.filter2D(gray.astype(np.float32)/255, cv2.CV_32F, k)))) for k in GABOR_KERNELS]
+    return np.concatenate([feat, np.asarray(energies,np.float32)])
 
 
 class PerceptionModel:
@@ -110,13 +114,15 @@ class PerceptionModel:
         self.weights_path = Path(weights_path) if weights_path else None
         if self.weights_path and self.weights_path.exists():
             self._load_weights(self.weights_path)
-        else:
+        elif self.weights_path is None:
             self._init_default_weights()
+        else:
+            raise FileNotFoundError(f"Perception weights missing: {self.weights_path}")
 
     def _init_default_weights(self):
-        """Analytical baseline weights reflecting physical color & depth priors."""
+        """Explicit untrained initializer for the training script only."""
         rng = np.random.default_rng(26126)
-        in_dim = 32
+        in_dim = 40
         h1 = 64
         h2 = 32
         out_dim = 4
@@ -129,13 +135,17 @@ class PerceptionModel:
         self.b3 = np.zeros(out_dim, dtype=np.float32)
 
     def _load_weights(self, path):
-        data = np.load(path)
+        data = np.load(path, allow_pickle=False)
         self.W1 = data["W1"].astype(np.float32)
         self.b1 = data["b1"].astype(np.float32)
         self.W2 = data["W2"].astype(np.float32)
         self.b2 = data["b2"].astype(np.float32)
         self.W3 = data["W3"].astype(np.float32)
         self.b3 = data["b3"].astype(np.float32)
+        self.mean = data["mean"].astype(np.float32) if "mean" in data else np.zeros(self.W1.shape[0],np.float32)
+        self.scale = data["scale"].astype(np.float32) if "scale" in data else np.ones(self.W1.shape[0],np.float32)
+        if self.W1.shape != (40,64) or not all(np.isfinite(x).all() for x in (self.W1,self.W2,self.W3,self.mean,self.scale)):
+            raise ValueError("Invalid or incompatible perception model")
 
     def save_weights(self, path):
         Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -143,16 +153,19 @@ class PerceptionModel:
             path,
             W1=self.W1, b1=self.b1,
             W2=self.W2, b2=self.b2,
-            W3=self.W3, b3=self.b3
+            W3=self.W3, b3=self.b3, mean=getattr(self,"mean",np.zeros(40)), scale=getattr(self,"scale",np.ones(40))
         )
 
     def forward(self, x):
-        """Vectorized inference: x shape (N, 32) -> probabilities (N, 4)."""
+        """Vectorized inference: x shape (N, 40) -> probabilities (N, 4)."""
         x = np.atleast_2d(np.asarray(x, dtype=np.float32))
-        with np.errstate(all='ignore'):
-            z1 = np.maximum(0.0, x @ self.W1 + self.b1)
-            z2 = np.maximum(0.0, z1 @ self.W2 + self.b2)
-            logits = z2 @ self.W3 + self.b3
+        if x.shape[1] != 40 or not np.isfinite(x).all():
+            raise ValueError("Expected finite 40-feature observations")
+        x=(x-getattr(self,'mean',0))/getattr(self,'scale',1)
+        with np.errstate(over='raise',invalid='raise'):
+            z1 = np.maximum(0.0, np.einsum("ij,jk->ik", x, self.W1) + self.b1)
+            z2 = np.maximum(0.0, np.einsum("ij,jk->ik", z1, self.W2) + self.b2)
+            logits = np.einsum("ij,jk->ik", z2, self.W3) + self.b3
             logits_max = np.max(logits, axis=1, keepdims=True)
             exp_l = np.exp(logits - logits_max)
             probs = exp_l / (np.sum(exp_l, axis=1, keepdims=True) + 1e-8)

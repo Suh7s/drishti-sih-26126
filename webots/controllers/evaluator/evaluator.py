@@ -16,6 +16,11 @@ settings=json.loads(Path(os.environ['DRISHTI_CONFIG']).read_text()) if os.enviro
 out=Path(settings.get('output',ROOT/'results/webots_latest'))
 out.mkdir(parents=True,exist_ok=True)
 log=(out/'ground_truth.jsonl').open('w',buffering=1)
+start_position=np.array(rover.getPosition())
+if np.linalg.norm(start_position[:2]) > .01:
+    (out/'evaluation.json').write_text(json.dumps({'success':False,'error':'Unexpected start position; regenerate world'}))
+    robot.simulationQuit(1)
+    raise SystemExit(1)
 frame=0
 recording=False
 finished_at=None

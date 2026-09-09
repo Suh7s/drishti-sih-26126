@@ -11,6 +11,7 @@ class CameraNavigation:
     def __init__(self, calibration, goal=(10.0, 0.0), initial_base_height=0.50,
                  mount=None, config=None, use_slam=True, use_perception=True):
         self.calibration = calibration
+        self.initial_base_height = initial_base_height
         self.goal = np.asarray(goal, float)
         self.grid = GridMap(120, 90, 0.25, (-3.0, -11.0))
         self.mount = camera_mount(height=0.15) if mount is None else mount.copy()
@@ -34,6 +35,7 @@ class CameraNavigation:
         self.bootstrap_done = False
         self.launch_prior_error = None
         self.trajectory = []
+        self.map_revision = 0
 
     def process(self, left, right, timestamp, sensor_age=0.0):
         if self.last_stamp is not None and timestamp <= self.last_stamp:
@@ -45,7 +47,11 @@ class CameraNavigation:
         depth = self.stereo.compute(left, right)
 
         # 2. Visual SLAM motion tracking with keyframe & loop closure
-        T, q, status, slam_diag = self.slam.update(left, depth, timestamp)
+        if self.use_slam:
+            T, q, status, slam_diag = self.slam.update(left, depth, timestamp)
+        else:
+            T, q, status = self.vo.update(left, depth)
+            slam_diag = {"slam_enabled": False}
         base = T @ np.linalg.inv(self.mount)
         pose = np.array([base[0, 3], base[1, 3], math.atan2(base[1, 0], base[0, 0])])
 
@@ -53,7 +59,7 @@ class CameraNavigation:
         semantic_costs = None
         perception_stats = {}
         if self.use_perception and self.perception is not None:
-            sem_grid, conf_grid, sem_mask = self.perception.segment_frame(left, depth)
+            sem_grid, conf_grid, sem_mask = self.perception.segment_frame(left, depth, patch_size=40)
             self.latest_semantic_mask = sem_mask
             semantic_costs = self.perception.compute_traversability_cost(conf_grid)
             total_patches = float(sem_grid.size)
@@ -66,8 +72,20 @@ class CameraNavigation:
 
         # 4. Multi-modal ground and obstacle mapping
         map_stats = {}
+        revised = self.use_slam and self.slam.map_revision != self.map_revision
+        if revised:
+            # Old occupancy is in the old coordinate estimate: discard it.
+            self.grid = GridMap(120, 90, 0.25, (-3.0, -11.0))
+            self.mapper = GroundMapper(self.grid, self.calibration)
+            for kf in self.slam.keyframes:
+                kb = kf.T_world_camera @ np.linalg.inv(self.mount)
+                # Preserve observation times so historical support can expire.
+                self.mapper.update(kf.depth, kf.T_world_camera, kf.timestamp,
+                                   expected_ground_z=float(kb[2, 3] - self.initial_base_height))
+            self.map_revision = self.slam.map_revision
         if q >= self.navigator.cfg.min_quality:
-            map_stats = self.mapper.update(depth, T, timestamp, semantic_cost_map=semantic_costs)
+            map_stats = self.mapper.update(depth, T, timestamp, semantic_cost_map=semantic_costs,
+                                           expected_ground_z=float(base[2, 3] - self.initial_base_height))
 
         if not self.bootstrap_done and map_stats:
             residual = abs(map_stats["ground_z_median"])
@@ -97,9 +115,12 @@ class CameraNavigation:
         # 5. Planning and motion control
         cmd = self.navigator.command(self.grid, pose, self.goal, q, sensor_age, dt, now=timestamp)
 
-        # Pose attitude safety check (allow up to 28 degrees for rough outdoor terrain)
+        if revised:
+            cmd = self.navigator.stop("HOLD", "Map rebuilt after visual pose correction")
+
+        # Pose attitude safety check (allow up to 32 degrees for rough outdoor terrain)
         tilt = math.acos(float(np.clip(base[2, 2], -1.0, 1.0)))
-        if tilt > math.radians(28):
+        if tilt > self.navigator.cfg.max_slope_rad:
             cmd = self.navigator.stop("HOLD", "Estimated attitude exceeds safe terrain limit")
 
         self.trajectory.append(pose.tolist())

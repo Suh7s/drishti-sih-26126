@@ -56,9 +56,10 @@ class GridMap:
     def blocked(self, radius, max_slope=None):
         """Inflate occupied cells and map edge by footprint plus caller margin."""
         n = int(math.ceil(radius / self.resolution))
-        out = self.occupied.copy()
+        source = self.occupied.copy()
         if max_slope is not None:
-            out |= (self.slope > max_slope)
+            source |= (self.slope > max_slope)
+        out = source.copy()
         # Account for finite source/destination cell extent conservatively.
         for dr in range(-n, n + 1):
             for dc in range(-n, n + 1):
@@ -66,7 +67,7 @@ class GridMap:
                     continue
                 ra, rb = max(0, dr), min(self.height, self.height + dr)
                 ca, cb = max(0, dc), min(self.width, self.width + dc)
-                out[ra:rb, ca:cb] |= self.occupied[ra-dr:rb-dr, ca-dc:cb-dc]
+                out[ra:rb, ca:cb] |= source[ra-dr:rb-dr, ca-dc:cb-dc]
         out[:n, :] = out[-n:, :] = True
         out[:, :n] = out[:, -n:] = True
         return out
@@ -76,6 +77,9 @@ class GridMap:
         if not math.isinf(max_age) and max_age > 0:
             stale = (now - self.last_seen > max_age) & self.occupied
             self.occupied[stale] = False
+            self.observed[stale] = False
+            self.last_seen[stale] = -np.inf
+            self.risk[stale] = 1.0
 
     def footprint_observed(self, xy, radius, now=None, max_age=4.0):
         r, c = self.cell(xy)
@@ -117,10 +121,11 @@ def astar(grid, start_xy, goal_xy, cfg, allow_unknown=True, risk_aware=True):
                 continue
             if dr and dc and (blocked[p[0]+dr,p[1]] or blocked[p[0],p[1]+dc]):
                 continue
+            step_cost = math.hypot(dr, dc)
             risk = cfg.risk_weight * grid.risk[q] if risk_aware else 0.0
             slope_cost = getattr(cfg, 'slope_weight', 3.0) * grid.slope[q] if risk_aware else 0.0
             unknown = cfg.unknown_weight if not grid.observed[q] else 0.0
-            ng = g + math.hypot(dr,dc) * (1.0 + risk + unknown + slope_cost)
+            ng = g + step_cost * (1.0 + risk + unknown + slope_cost)
             if ng < best.get(q, math.inf):
                 best[q], previous[q] = ng, p
                 heapq.heappush(queue, (ng + heuristic(q), ng, q))
@@ -159,7 +164,7 @@ class Navigator:
         if len(self.path) < 2:
             return self.stop("BLOCKED", "No feasible route in current map")
         p = np.asarray(pose[:2])
-        # Adjacent waypoint avoids cutting a smoothed path through inflated obstacles.
+        # Adjacent waypoint keeps the target inside the verified grid corridor.
         target = np.asarray(self.path[1])
         heading = math.atan2(*(target-p)[::-1])
         error = wrap(heading-pose[2])

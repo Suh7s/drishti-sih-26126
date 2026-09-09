@@ -11,6 +11,7 @@ scene complete with:
 """
 from pathlib import Path
 import math
+import json
 import numpy as np
 import cv2
 
@@ -101,6 +102,16 @@ def pose(x, y, z, geom, color, extra="", rot=None):
     return f"Pose {{ translation {x} {y} {z} {rot_str}children [ {shape(geom, color, extra)} ] }}"
 
 
+def terrain_height(x, y):
+    """Deterministic collidable terrain; flat surveyed launch zone."""
+    x, y = np.asarray(x), np.asarray(y)
+    ramp = .23 * np.exp(-((x - 5.2) / 1.8) ** 2)
+    banks = .65 * (1 - np.exp(-(np.maximum(np.abs(y) - 2.5, 0) / 1.7) ** 2))
+    roughness = .018 * np.sin(2.0 * x) * np.sin(1.8 * y)
+    start_blend = np.clip((np.sqrt(x*x + y*y) - 1.6) / 1.4, 0, 1)
+    return (ramp + banks + roughness) * start_blend
+
+
 def build_world():
     build_textures()
     print("Assembling disaster.wbt scene...")
@@ -114,59 +125,48 @@ DirectionalLight { direction -0.35 0.55 -0.75 color 0.98 0.90 0.78 intensity 1.6
 Fog { color 0.42 0.48 0.52 visibilityRange 48 }
 """]
 
-    # Main flood basin floor
-    w.append("""Solid {
-  translation 5 0 -0.05
-  children [
-    Shape {
-      appearance PBRAppearance {
-        baseColorMap ImageTexture { url [ "textures/nepal_terrain.jpg" ] }
-        roughness 0.95
-        metalness 0.02
-      }
-      geometry Box { size 24 18 0.1 }
-    }
-  ]
-  name "ground_basin"
-  boundingObject Box { size 24 18 0.1 }
-}""")
-
-    # Undulating natural terrain contours & mounds (slope angles 6 - 15 degrees)
-    # Mound 1: gentle terrace climb on left bank
-    w.append(pose(3.2, 2.2, 0.08, "Box { size 4.5 3.5 0.16 }", ".42 .38 .32",
-                  "baseColorMap ImageTexture { url [ \"textures/nepal_mud.jpg\" ] }",
-                  rot="0.2 0.9 0 0.12"))
-    # Mound 2: alluvial berm on right bank
-    w.append(pose(6.8, -2.0, 0.10, "Box { size 5.2 3.8 0.20 }", ".38 .35 .28",
-                  "baseColorMap ImageTexture { url [ \"textures/nepal_mud.jpg\" ] }",
-                  rot="-0.1 0.95 0 0.15"))
-    # Mound 3: slight central crest
-    w.append(pose(8.5, 1.0, 0.07, "Box { size 3.8 3.0 0.14 }", ".40 .36 .30",
-                  "baseColorMap ImageTexture { url [ \"textures/nepal_mud.jpg\" ] }",
-                  rot="0.3 0.8 0 0.10"))
+    # Visible and collidable geometry use the SAME height field.
+    xx, yy = np.meshgrid(np.linspace(-7, 17, 121), np.linspace(-9, 9, 91))
+    heights = terrain_height(xx, yy)
+    values = ' '.join(f'{z:.5f}' for z in heights.ravel())
+    w.append(f"""Solid {{ translation -7 -9 0 name "ground_basin"
+      children [ Shape {{ appearance PBRAppearance {{
+        baseColorMap ImageTexture {{ url [ "textures/nepal_terrain.jpg" ] }}
+        roughness .95 metalness 0
+      }} geometry DEF BASIN_HEIGHTFIELD ElevationGrid {{
+        xDimension 121 yDimension 91 xSpacing .2 ySpacing .2
+        height [ {values} ] thickness 1
+      }} }} ] boundingObject USE BASIN_HEIGHTFIELD }}""")
+    manifest = {'schema': 1, 'rover_enclosing_radius_m': .42,
+                'terrain': {'type': 'ElevationGrid', 'sample_spacing_m': .2,
+                            'min_height_m': float(heights.min()), 'max_height_m': float(heights.max())},
+                'hazards': [
+                    {'name':'boulder', 'kind':'box', 'center':[3.5,.55], 'half_size':[.4,.4]},
+                    {'name':'fallen_log', 'kind':'box', 'center':[7.2,1.3], 'half_size':[.24,.9]},
+                    {'name':'ruin', 'kind':'box', 'center':[8.2,-1.4], 'half_size':[.375,.55], 'yaw':.42},
+                    {'name':'water_exclusion', 'kind':'circle', 'center':[5.8,.85], 'radius':.85,
+                     'scope':'visual no-go zone; no fluid or soil mechanics'}]}
 
     # Murky Flood Water Channel / Mud Hazard Zone
-    # Low-lying mud puddle running across y ~ -0.4 to 0.6 at x=4.8
+    # Low-lying mud puddle running along north flood terrace at x=5.8, y=0.85
     w.append(f"""DEF HAZARD_MUD_POOL Solid {{
-  translation 4.9 0.1 0.015
+  translation 5.8 0.85 {float(terrain_height(5.8,.85)) + .008}
   children [
     Shape {{
       appearance PBRAppearance {{
-        baseColor 0.18 0.24 0.22
-        roughness 0.15
-        metalness 0.35
-        transparency 0.12
+        baseColor 0.15 0.22 0.20
+        roughness 0.12
+        metalness 0.40
       }}
-      geometry Cylinder {{ radius 0.95 height 0.03 subdivision 32 }}
+      geometry Cylinder {{ radius 0.85 height 0.005 subdivision 32 }}
     }}
   ]
   name "hazard_mud_water"
-  boundingObject Cylinder {{ radius 0.95 height 0.03 subdivision 32 }}
 }}""")
 
     # Disaster Obstacle 1: Large fallen Himalayan boulder
     w.append(f"""DEF HAZARD_0 Solid {{
-  translation 3.4 -0.2 0.38
+  translation 3.5 0.55 {float(terrain_height(3.5,.55)) + .325}
   children [
     Shape {{
       appearance PBRAppearance {{
@@ -175,17 +175,17 @@ Fog { color 0.42 0.48 0.52 visibilityRange 48 }
         metalness 0.05
         baseColorMap ImageTexture {{ url [ "textures/boulder.jpg" ] }}
       }}
-      geometry Box {{ size 0.85 0.90 0.76 }}
+      geometry Box {{ size 0.80 0.80 0.65 }}
     }}
   ]
   name "hazard_boulder_0"
-  boundingObject Box {{ size 0.85 0.90 0.76 }}
+  boundingObject Box {{ size 0.80 0.80 0.65 }}
 }}""")
 
     # Disaster Obstacle 2: Fallen swept timber tree trunk
     w.append(f"""DEF HAZARD_1 Solid {{
-  translation 6.5 1.1 0.25
-  rotation 0.2 0.4 0.9 0.75
+  translation 7.2 1.3 {float(terrain_height(7.2,1.3)) + .24}
+  rotation 1 0 0 1.57079632679
   children [
     Shape {{
       appearance PBRAppearance {{
@@ -202,8 +202,8 @@ Fog { color 0.42 0.48 0.52 visibilityRange 48 }
 
     # Disaster Obstacle 3: Collapsed concrete building ruin
     w.append(f"""DEF HAZARD_2 Solid {{
-  translation 7.8 -1.2 0.32
-  rotation 0.1 0.3 0.95 0.42
+  translation 8.2 -1.4 {float(terrain_height(8.2,-1.4)) + .32}
+  rotation 0 0 1 0.42
   children [
     Shape {{
       appearance PBRAppearance {{
@@ -221,11 +221,13 @@ Fog { color 0.42 0.48 0.52 visibilityRange 48 }
     # Additional small rocks & river debris scattered naturally
     small_rocks = [
         (2.4, 1.8, 0.15, 0.35, 0.40, 0.30),
-        (5.2, -1.6, 0.18, 0.45, 0.38, 0.35),
+        (5.4, -2.1, 0.18, 0.45, 0.38, 0.35),
         (8.2, 2.1, 0.14, 0.38, 0.42, 0.28),
-        (9.4, -0.6, 0.16, 0.40, 0.35, 0.32),
+        (9.4, -0.7, 0.16, 0.40, 0.35, 0.32),
     ]
     for i, (rx, ry, rz, sx, sy, sz) in enumerate(small_rocks):
+        rz = float(terrain_height(rx,ry)) + sz / 2
+        manifest['hazards'].append({'name':f'debris_{i}', 'kind':'box', 'center':[rx,ry], 'half_size':[sx/2,sy/2]})
         w.append(f"""Solid {{
   translation {rx} {ry} {rz}
   children [
@@ -246,9 +248,10 @@ Fog { color 0.42 0.48 0.52 visibilityRange 48 }
     w.append(pose(0, 0, 0.005, "Cylinder { radius 0.65 height 0.01 subdivision 48 }", ".18 .65 .55"))
 
     # Goal Disaster Relief Checkpoint Marker (high-visibility safety orange beacon)
+    # Pole and flag marker are offset to the edge of the landing circle
     w.append(pose(10.0, 0, 0.008, "Cylinder { radius 0.75 height 0.016 subdivision 48 }", ".95 .45 .12"))
-    w.append(pose(10.0, 0, 0.45, "Cylinder { radius 0.035 height 0.90 subdivision 16 }", ".15 .18 .20"))
-    w.append(pose(10.0, 0, 0.92, "Box { size 0.42 0.02 0.24 }", ".98 .42 .10"))
+    w.append(pose(10.55, 0.45, 0.45, "Cylinder { radius 0.035 height 0.90 subdivision 16 }", ".15 .18 .20"))
+    w.append(pose(10.55, 0.45, 0.92, "Box { size 0.42 0.02 0.24 }", ".98 .42 .10"))
 
     # DRISHTI ROVER
     w.append("""DEF ROVER Robot {
@@ -273,28 +276,28 @@ Fog { color 0.42 0.48 0.52 visibilityRange 48 }
     Camera { translation .29 0.08 .62 rotation 0 1 0 0.78539816339 name "left" width 640 height 400 fieldOfView 1.4 near .03 }
     Camera { translation .29 -0.08 .62 rotation 0 1 0 0.78539816339 name "right" width 640 height 400 fieldOfView 1.4 near .03 }
     HingeJoint { jointParameters HingeJointParameters { axis 0 1 0 anchor 0.18 0.23 0 }
-      device [ RotationalMotor { name "front_left" maxVelocity 15 maxTorque 14 } ]
+      device [ RotationalMotor { name "front_left" maxVelocity 15 maxTorque 30 } ]
       endPoint Solid { translation 0.18 0.23 0 rotation 1 0 0 1.57079632679
         children [ Shape { appearance PBRAppearance { baseColor .035 .045 .05 roughness 0.85 metalness 0 } geometry Cylinder { radius .13 height .10 subdivision 32 } }
         Pose { translation 0 0 0.052 children [ Shape { appearance PBRAppearance { baseColor .48 .53 .55 roughness 0.85 metalness 0 } geometry Cylinder { radius .071 height .006 subdivision 12 } } ] } ]
         name "front_left_wheel" boundingObject Cylinder { radius .13 height .1 subdivision 32 }
         physics Physics { density -1 mass .7 } } }
     HingeJoint { jointParameters HingeJointParameters { axis 0 1 0 anchor -0.18 0.23 0 }
-      device [ RotationalMotor { name "rear_left" maxVelocity 15 maxTorque 14 } ]
+      device [ RotationalMotor { name "rear_left" maxVelocity 15 maxTorque 30 } ]
       endPoint Solid { translation -0.18 0.23 0 rotation 1 0 0 1.57079632679
         children [ Shape { appearance PBRAppearance { baseColor .035 .045 .05 roughness 0.85 metalness 0 } geometry Cylinder { radius .13 height .10 subdivision 32 } }
         Pose { translation 0 0 0.052 children [ Shape { appearance PBRAppearance { baseColor .48 .53 .55 roughness 0.85 metalness 0 } geometry Cylinder { radius .071 height .006 subdivision 12 } } ] } ]
         name "rear_left_wheel" boundingObject Cylinder { radius .13 height .1 subdivision 32 }
         physics Physics { density -1 mass .7 } } }
     HingeJoint { jointParameters HingeJointParameters { axis 0 1 0 anchor 0.18 -0.23 0 }
-      device [ RotationalMotor { name "front_right" maxVelocity 15 maxTorque 14 } ]
+      device [ RotationalMotor { name "front_right" maxVelocity 15 maxTorque 30 } ]
       endPoint Solid { translation 0.18 -0.23 0 rotation 1 0 0 1.57079632679
         children [ Shape { appearance PBRAppearance { baseColor .035 .045 .05 roughness 0.85 metalness 0 } geometry Cylinder { radius .13 height .10 subdivision 32 } }
         Pose { translation 0 0 0.052 children [ Shape { appearance PBRAppearance { baseColor .48 .53 .55 roughness 0.85 metalness 0 } geometry Cylinder { radius .071 height .006 subdivision 12 } } ] } ]
         name "front_right_wheel" boundingObject Cylinder { radius .13 height .1 subdivision 32 }
         physics Physics { density -1 mass .7 } } }
     HingeJoint { jointParameters HingeJointParameters { axis 0 1 0 anchor -0.18 -0.23 0 }
-      device [ RotationalMotor { name "rear_right" maxVelocity 15 maxTorque 14 } ]
+      device [ RotationalMotor { name "rear_right" maxVelocity 15 maxTorque 30 } ]
       endPoint Solid { translation -0.18 -0.23 0 rotation 1 0 0 1.57079632679
         children [ Shape { appearance PBRAppearance { baseColor .035 .045 .05 roughness 0.85 metalness 0 } geometry Cylinder { radius .13 height .10 subdivision 32 } }
         Pose { translation 0 0 0.052 children [ Shape { appearance PBRAppearance { baseColor .48 .53 .55 roughness 0.85 metalness 0 } geometry Cylinder { radius .071 height .006 subdivision 12 } } ] } ]
@@ -310,7 +313,8 @@ Fog { color 0.42 0.48 0.52 visibilityRange 48 }
         tx = float(rng.uniform(-4.5, 17.5))
         ty = float(rng.choice([-1, 1]) * rng.uniform(3.4, 8.8))
         yaw = float(rng.uniform(0, 6.28))
-        w.append(f'Oak {{ translation {tx:.3f} {ty:.3f} 0 rotation 0 0 1 {yaw:.3f} name "nepal_tree_{i}" }}')
+        manifest['hazards'].append({'name':f'tree_{i}', 'kind':'circle', 'center':[round(tx,3),round(ty,3)], 'radius':.5})
+        w.append(f'Oak {{ translation {tx:.3f} {ty:.3f} {float(terrain_height(tx,ty)):.3f} rotation 0 0 1 {yaw:.3f} name "nepal_tree_{i}" }}')
 
     # Himalayan Mountain Peak Silhouettes in the distance
     mountain_positions = [
@@ -330,6 +334,7 @@ Fog { color 0.42 0.48 0.52 visibilityRange 48 }
 
     out_file = ROOT / "worlds" / "disaster.wbt"
     out_file.write_text("\n".join(w))
+    out_file.with_suffix(".manifest.json").write_text(json.dumps(manifest,indent=2)+"\n")
     print(f"Created disaster world at: {out_file}")
     return out_file
 

@@ -1,88 +1,67 @@
-# DRISHTI 2.0: Vision-Based Autonomous Ground Navigation
+<p align="center"><img src="docs/assets/banner.svg" alt="DRISHTI — navigate beyond GPS" width="100%"></p>
 
-**Autonomous UGV Navigation in GPS-Denied, Rough Outdoor Disaster Environments.**
+**A camera-driven rover for GPS-denied outdoor navigation.** Built for SIH problem **26126**, Bharat Electronics Limited.
 
-> **Smart India Hackathon 2024 / Problem Statement 26126**  
-> **Organization**: Bharat Electronics Limited (BEL)  
-> **Theme**: Smart Automation · Software Category
+DRISHTI turns a calibrated stereo RGB pair into depth, a visual position estimate, terrain evidence, and wheel commands. The current 2.0 integration adds a learned terrain classifier, keyframe relocalization, slope-aware mapping, and a Nepal-inspired disaster scene with actual terrain collision geometry. It runs in **Webots on macOS or Linux**, without ROS 2 or an NVIDIA GPU.
 
----
+[Watch the measured baseline mission](demo/mission.mp4) · [Evidence and limitations](docs/STATUS.md) · [2.0 engineering changes](docs/UPGRADE_2.md) · [Submission guide](docs/SUBMISSION.md)
 
-## System Architecture
+[![Actual Webots mission recording](demo/mission-preview.jpg)](demo/mission.mp4)
 
-DRISHTI provides an end-to-end autonomous navigation stack designed specifically for unstructured post-disaster environments (Nepal flood/landslide aftermath, mountain riverbeds, rubble fields):
+### Run it
 
-```
-                       [ Rectified Stereo RGB Cameras ]
-                                      │
-               ┌──────────────────────┴──────────────────────┐
-               ▼                                             ▼
-       [ Stereo Depth (SGBM) ]                     [ Perception AI ]
-               │                           (40-Feature MLP Semantic Classifier)
-               │                             • Traversable Path  • Obstacle
-               │                             • Water/Mud Hazard  • Vegetation
-               ├──────────────────────┬──────────────────────┘
-               ▼                      ▼
-    [ Visual SLAM Engine ]   [ Local RANSAC Ground Mapper ]
-     • KLT + PnP Odometry     • Adaptive Plane Fitting
-     • Keyframe Graph (ORB)   • Slope Extraction & Terrain Contours
-     • Loop Closure RANSAC    • Ditch / Drop-off Detection
-     • Relocalization         • Dynamic Obstacle Evidence Decay
-               │                      │
-               └──────────┬───────────┘
-                          ▼
-            [ Slope & Risk-Aware A* Planner ]
-             • Curvature & Kinodynamic Constraints
-             • Lookahead Braking Envelope Supervision
-                          │
-                          ▼
-             [ Skid-Steer Motor Velocity Commands ]
-```
+Install [Webots R2025a](https://github.com/cyberbotics/webots/releases/tag/R2025a), then:
 
----
-
-## PS Requirements & DRISHTI Capabilities
-
-| PS Requirement | DRISHTI Implementation | Status |
-|---|---|:---:|
-| **1. Path Detection** | **Perception AI**: 40-feature multimodal classifier (HSV color distribution, Sobel texture energy, normal gradients, depth roughness) classifying safe paths vs. obstacles, flood mud/water, and dense vegetation. Sub-millisecond pure NumPy inference. | **Satisfied (10/10)** |
-| **2. Visual Localization** | **Visual SLAM**: Stereo metric visual odometry + spatial/angular keyframe graph with multi-scale ORB descriptors, appearance-based loop closure via PnP RANSAC, and automatic relocalization upon tracking degradation. | **Satisfied (10/10)** |
-| **3. Collision Avoidance** | **Dynamic Planner**: Risk-inflated grid with local slope penalties (up to 30°), free-space obstacle clearing, and lookahead braking envelope verification to dynamically avoid sudden and moving obstacles. | **Satisfied (10/10)** |
-| **4. Unstructured Terrain** | **Nepal Flood Scene**: Procedurally generated alluvial disaster scene in Webots with mud deposits, gravel terraces, Himalayan boulders, swept timber, collapsed ruins, and mountain mist. | **Satisfied (10/10)** |
-| **5. Sensor Honesty** | **Strict Isolation**: Robot controller only sees RGB stereo pairs (no simulator truth access). A separate Webots Supervisor logs ground truth position independently for evaluation. | **Verified** |
-
----
-
-## Quick Start (macOS / Linux)
-
-### 1. Setup Environment
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-### 2. Run Test Suite
-```bash
 python run.py test
-```
-*34 comprehensive tests passing (Perception AI, Visual SLAM, local plane RANSAC, navigation safety, integration).*
-
-### 3. Launch Nepal Flood Disaster Simulation
-Install [Webots R2025a](https://github.com/cyberbotics/webots/releases/tag/R2025a), then:
-```bash
-# Launch Nepal Flood Disaster course (default)
 python webots/launch.py --world disaster --record --exit
-
-# For faster headless/fast evaluation:
-python webots/launch.py --world disaster --fast --exit
 ```
 
----
+Use `--webots /path/to/Webots.app` if Webots is outside Applications, or pass the Linux executable. `--fast` accelerates simulation; it still renders camera images. Every launch uses a fresh results directory, regenerates the disaster world, and copies its evaluation manifest. Do not reuse a results folder.
 
-## Telemetry & Verification Evidence
+For an immediate presentation without running the simulator:
 
-Historical runs and independent evaluations are stored in:
-- `results/submission_run/`: Validated physics run (**62.78 s**, **1.21 cm RMSE**, **37.83 cm clearance**).
-- `results/validated_webots/`: Baseline test (**59.33 s**, **8.88 mm RMSE**).
-- `tests/`: 34 automated unit and integration tests.
+```bash
+python run.py demo
+```
+
+This opens a local evidence viewer with the **recorded baseline** video and synchronized telemetry. It is not a live robot connection.
+
+### What makes the implementation inspectable
+
+| Stage | Implementation | Evidence boundary |
+|---|---|---|
+| Path perception | 40 visual/depth features → NumPy MLP, plus stereo geometric hazards | 8,000 procedural training patches; 2,000 held-out patches. Synthetic accuracy is not field accuracy. |
+| Localization | LK/PnP stereo odometry; ORB keyframes, relocalization and bounded SE(3) loop correction | Corrected keyframe landmarks and rebuilt occupancy map; no claim of bundle adjustment. |
+| Ground mapping | RANSAC with inlier refitting; terrain-relative height and slope | A failed plane fit cannot certify new free ground. |
+| Planning | Inflated A*, slope/risk costs, observed-footprint and braking-envelope checks | Expired obstacle evidence becomes unknown; repeated ground observations are required to clear occupancy. |
+| Simulation | Wheeled rover, calibrated stereo pair, collidable height field, debris and water exclusion zone | A separate Supervisor evaluates truth; navigation cannot read it. No fluid, soil or flood-current physics. |
+
+### Measured baseline
+
+The existing forest course contains flat, static obstacles. Its results belong to the baseline revision, **not** the new disaster scene:
+
+| Result | Measured value |
+|---|---:|
+| Mission time | 62.78 simulation seconds |
+| Position RMSE, without trajectory alignment | 1.21 cm |
+| Conservative obstacle clearance | 37.83 cm |
+| Goal distance | 36.38 cm |
+
+![Independent trajectory comparison and error](docs/assets/evaluation.png)
+
+Raw baseline measurements are in [`results/submission_run`](results/submission_run). Current disaster validation is reported separately in [STATUS](docs/STATUS.md). Test success alone does not establish collision-free navigation.
+
+### Repository map
+
+- `src/drishti/` — portable perception, localization, mapping and control.
+- `webots/` — scene generators, robot controller and independent evaluator.
+- `tests/` — numerical, geometry and safety regressions.
+- `demo/` — actual baseline movie and evidence viewer.
+- `results/` — curated measured results with scenario provenance.
+- `archive/` — historical experiments; not the current launch path.
+
+This is a **simulation research prototype**, not a deployable flood-rescue robot. Its strongest next experiments are held-out materials/lighting, loop routes, camera interruptions, moving obstacles, steeper slopes and physical traction tests. See [third-party notices](THIRD_PARTY_NOTICES.md) for asset attribution.

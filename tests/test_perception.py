@@ -15,11 +15,11 @@ class PerceptionAITests(unittest.TestCase):
         rgb_patch = np.zeros((20, 20, 3), dtype=np.uint8)
         depth_patch = np.full((20, 20), 2.5, dtype=np.float32)
         feat = extract_patch_features(rgb_patch, depth_patch)
-        self.assertEqual(feat.shape, (32,))
+        self.assertEqual(feat.shape, (40,))
         self.assertTrue(np.all(np.isfinite(feat)))
 
     def test_model_forward_probabilities(self):
-        x = np.random.randn(5, 32).astype(np.float32)
+        x = np.random.randn(5, 40).astype(np.float32)
         probs = self.model.forward(x)
         self.assertEqual(probs.shape, (5, 4))
         np.testing.assert_allclose(np.sum(probs, axis=1), 1.0, atol=1e-5)

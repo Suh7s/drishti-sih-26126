@@ -4,7 +4,7 @@ Extends metric stereo visual odometry with:
 - Spatially and temporally spaced keyframe storage
 - Multi-scale ORB feature extraction and descriptor matching
 - Appearance-based loop closure detection via PnP RANSAC
-- Topological pose graph loop error distribution
+- Bounded SE(3) pose-chain loop error distribution (not bundle adjustment)
 - Global relocalization from lost tracking
 Compatible with the CameraNavigation pipeline.
 """
@@ -43,6 +43,9 @@ class VisualSLAM:
         self.loop_closures = 0
         self.relocalizations = 0
         self.last_loop_info = None
+        self.frame_count = 0
+        self.map_revision = 0
+        self.last_loop_frame = -1000
 
         # ORB detector for invariant keyframe matching and loop closure
         self.orb = cv2.ORB_create(nfeatures=600, scaleFactor=1.2, nlevels=4, edgeThreshold=15)
@@ -121,7 +124,7 @@ class VisualSLAM:
         self.next_keyframe_id += 1
         return kf
 
-    def detect_loop_closure(self, current_gray, current_T, max_search_dist=3.5):
+    def detect_loop_closure(self, current_gray, current_T, max_search_dist=1.0):
         """Match current features against past non-adjacent keyframes."""
         if len(self.keyframes) < 4:
             return None, None
@@ -140,7 +143,9 @@ class VisualSLAM:
         for kf in self.keyframes[:-3]:
             kf_pos = kf.T_world_camera[:3, 3]
             dist = float(np.linalg.norm(curr_pos - kf_pos))
-            if dist > max_search_dist:
+            positions = [f.T_world_camera[:3, 3] for f in self.keyframes if f.id >= kf.id] + [curr_pos]
+            travel = sum(np.linalg.norm(b - a) for a, b in zip(positions, positions[1:]))
+            if dist > max_search_dist or travel < 3.0:
                 continue
 
             # Match ORB descriptors using ratio test
@@ -163,7 +168,7 @@ class VisualSLAM:
                 iterationsCount=150, reprojectionError=3.0, confidence=0.99
             )
 
-            if ok and inliers is not None and len(inliers) >= 14:
+            if ok and inliers is not None and len(inliers) >= 20 and len(inliers) / len(good_matches) >= .55:
                 num_inl = len(inliers)
                 if num_inl > best_inliers:
                     best_inliers = num_inl
@@ -211,7 +216,7 @@ class VisualSLAM:
                 iterationsCount=200, reprojectionError=2.5, confidence=0.999
             )
 
-            if ok and inliers is not None and len(inliers) >= 16:
+            if ok and inliers is not None and len(inliers) >= 20 and len(inliers) / len(good_matches) >= .55:
                 if len(inliers) > best_inliers:
                     best_inliers = len(inliers)
                     best_kf = kf
@@ -228,9 +233,35 @@ class VisualSLAM:
             self.vo.anchor_gray = None
             self.vo.anchor_points = None
             self.vo.failures = 0
+            self.vo.quality = .75
+            self.vo.last_inliers = best_inliers
+            self.map_revision += 1
             return best_pose
 
         return None
+
+    def correct_pose_chain(self, matched_kf, current_T, corrected_T):
+        """Distribute a bounded loop correction with proper rotations.
+
+        This is a pose-chain approximation, not a least-squares pose graph.
+        Landmark coordinates move with their owning keyframe. Mapping clients
+        must rebuild their map when map_revision changes.
+        """
+        delta = corrected_T @ np.linalg.inv(current_T)
+        rotation_vector = cv2.Rodrigues(delta[:3, :3])[0]
+        span = max(1, self.next_keyframe_id - matched_kf.id)
+        for kf in self.keyframes:
+            alpha = np.clip((kf.id - matched_kf.id) / span, 0, 1)
+            correction = np.eye(4)
+            correction[:3, :3] = cv2.Rodrigues(rotation_vector * alpha)[0]
+            correction[:3, 3] = delta[:3, 3] * alpha
+            kf.T_world_camera = correction @ kf.T_world_camera
+            kf.points_3d = np.einsum('ij,kj->ik', kf.points_3d, correction[:3, :3]) + correction[:3, 3]
+        if self.keyframes:
+            self.last_keyframe_pose = self.keyframes[-1].T_world_camera.copy()
+        self.vo.T = corrected_T.copy()
+        self.map_revision += 1
+        return corrected_T.copy()
 
     def update(self, image, depth, timestamp=None):
         """Process stereo image pair frame and update SLAM state.
@@ -242,6 +273,7 @@ class VisualSLAM:
             diagnostics: dict with SLAM metrics
         """
         gray = self.vo.calib and cv2.cvtColor(image[:, :, :3], cv2.COLOR_RGB2GRAY) if image.ndim == 3 else image
+        self.frame_count += 1
         T, q, status = self.vo.update(image, depth)
 
         loop_closed = False
@@ -253,19 +285,21 @@ class VisualSLAM:
             reloc_pose = self.attempt_relocalization(gray)
             if reloc_pose is not None:
                 T = reloc_pose
+                self.vo._anchor(gray, depth)
                 q = 0.75
                 status = "RELOCALIZED"
                 relocalized = True
         elif (status == "TRACKING" and q >= 0.35) or (len(self.keyframes) == 0 and status in ("INITIALIZED", "TRACKING") and q >= 0.25):
             # Check for loop closures every few frames if enough keyframes exist
-            if len(self.keyframes) >= 4 and self.next_keyframe_id % 3 == 0:
+            if len(self.keyframes) >= 4 and self.frame_count % 30 == 0 and self.frame_count - self.last_loop_frame > 150:
                 matched_kf, corrected_T = self.detect_loop_closure(gray, T)
                 if matched_kf is not None and corrected_T is not None:
                     # Smoothly blend / correct drift towards loop closure pose
                     drift = np.linalg.norm(corrected_T[:3, 3] - T[:3, 3])
-                    if drift < 1.2:  # Plausible drift bound
-                        T = 0.7 * corrected_T + 0.3 * T
-                        self.vo.T = T.copy()
+                    angle = np.linalg.norm(cv2.Rodrigues(corrected_T[:3, :3] @ T[:3, :3].T)[0])
+                    if drift < .6 and angle < math.radians(15):
+                        T = self.correct_pose_chain(matched_kf, T, corrected_T)
+                        self.last_loop_frame = self.frame_count
                         self.loop_closures += 1
                         loop_closed = True
                         status = "LOOP_CLOSED"
@@ -284,6 +318,7 @@ class VisualSLAM:
                     keyframe_added = True
 
         diagnostics = {
+            "map_revision": self.map_revision,
             "slam_status": status,
             "keyframes_count": len(self.keyframes),
             "loop_closures_count": self.loop_closures,

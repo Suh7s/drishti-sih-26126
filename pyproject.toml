@@ -11,3 +11,6 @@ dependencies = ["numpy>=1.26,<3", "opencv-python>=4.10,<5"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+drishti = ["models/*.npz", "models/*.json"]

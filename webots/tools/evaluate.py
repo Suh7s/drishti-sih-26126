@@ -17,16 +17,28 @@ def evaluate(folder):
     actual=np.column_stack([np.interp(nt,times,xyz[:,i]) for i in range(2)])
     errors=np.linalg.norm(actual-estimates,axis=1)
 
-    # Obstacle clearance check based on world configuration
-    if world_name == 'disaster':
-        obstacles = [(3.4, -0.2, 0.45, 0.45), (6.5, 1.1, 0.35, 0.75), (7.8, -1.2, 0.40, 0.55)]
-    else:
-        obstacles = [(3.5, 0, 0.40, 0.40), (6.4, 1.2, 0.35, 0.50)]
-
-    clearance=[]
-    for x, y, hx, hy in obstacles:
-        delta=np.maximum(np.abs(xyz[:,:2]-[x,y])-[hx,hy],0)
-        clearance.extend((np.linalg.norm(delta,axis=1)-.42).tolist())
+    # Independent scene manifest is generated alongside the physics world.
+    mf = folder/'scene_manifest.json'
+    if world_name == 'disaster' and not mf.exists():
+        raise ValueError('Missing scene manifest: cannot certify obstacle clearance')
+    hazards = json.loads(mf.read_text())['hazards'] if mf.exists() else [
+        {'name':'box0','kind':'box','center':[3.5,0],'half_size':[.4,.4]},
+        {'name':'box1','kind':'box','center':[6.4,1.2],'half_size':[.35,.5]}]
+    clearance=[]; per_hazard={}
+    for hazard in hazards:
+        delta = xyz[:,:2] - hazard['center']
+        if hazard['kind'] == 'circle':
+            values = np.linalg.norm(delta,axis=1) - hazard['radius'] - .42
+        else:
+            angle = hazard.get('yaw',0)
+            rotation = np.array([[np.cos(angle),-np.sin(angle)],[np.sin(angle),np.cos(angle)]])
+            local = np.einsum('ij,jk->ik',delta,rotation)
+            edge = np.maximum(np.abs(local)-hazard['half_size'],0)
+            values = np.linalg.norm(edge,axis=1)-.42
+        per_hazard[hazard['name']] = float(values.min())
+        clearance.extend(values.tolist())
+    orientation = np.array([r['orientation'] for r in truth]).reshape(-1,3,3)
+    tilt = np.rad2deg(np.arccos(np.clip(orientation[:,2,2],-1,1)))
 
     arrived=nav[-1]['state']=='ARRIVED'
     distance=float(np.linalg.norm(actual[-1]-goal[:2]))
@@ -58,7 +70,11 @@ def evaluate(folder):
         'slam_keyframes':keyframes,
         'slam_loop_closures':loops,
         'slam_relocalizations':relocs,
-        'max_slope_traversed_deg':max_slope,
+        'max_estimated_local_plane_slope_deg':max_slope,
+        'max_actual_body_tilt_deg':float(tilt.max()),
+        'actual_elevation_range_m':float(np.ptp(xyz[:,2])),
+        'evaluated_hazard_count':len(hazards),
+        'per_hazard_clearance_m':per_hazard,
         'capabilities':['Stereo RGB metric depth (SGBM)', 'Visual SLAM with keyframes and loop closure',
                         'Lightweight Perception AI semantic segmentation',
                         'Slope-aware RANSAC local ground plane estimation',

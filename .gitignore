@@ -21,3 +21,8 @@ webots/worlds/.*.wbproj
 results/webots_latest/
 results/webots_checks/
 results/webots_run*/
+
+# Raw validation recordings stay local; curated evidence is committed separately.
+results/disaster_validation_*/
+*_uncompressed.mp4
+webots/worlds/textures/*.jpg

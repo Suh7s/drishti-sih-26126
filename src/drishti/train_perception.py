@@ -1,300 +1,78 @@
-"""Train lightweight Perception AI MLP on synthetic multimodal terrain samples.
+"""Train on procedurally rendered RGB/depth patches, split by scene seed.
 
-Generates realistic multimodal samples (color, texture, stereo geometry)
-mimicking outdoor flood disaster environments (traversable dirt/gravel,
-obstacles/boulders, murky flood water/mud, vegetation) and optimizes
-the 3-layer MLP using cross-entropy with Adam optimizer in pure NumPy.
+Labels are material/geometry identities in the renderer, never inferred from the
+feature values. Held-out results only measure this synthetic domain.
 """
+import json
 from pathlib import Path
+import time
+import cv2
 import numpy as np
-from drishti.perception import (
-    CLASS_TRAVERSABLE, CLASS_OBSTACLE, CLASS_WATER_MUD, CLASS_VEGETATION,
-    DEFAULT_WEIGHTS_PATH, PerceptionModel
-)
+from .perception import PerceptionModel,extract_patch_features,DEFAULT_WEIGHTS_PATH
 
 
-def generate_synthetic_dataset(num_samples=12000, seed=26126):
-    rng = np.random.default_rng(seed)
-    X = []
-    y = []
-
-    per_class = num_samples // 4
-
-    # 1. TRAVERSABLE: dirt, gravel, dry path
-    # Hue: earthy 10-28, moderate sat 0.2-0.6, val 0.3-0.8
-    # Texture: moderate edge energy, low/moderate roughness
-    # Depth: valid_frac high, dz_dx low, height_proxy close to 0
-    for _ in range(per_class):
-        h_m = rng.uniform(0.04, 0.12)
-        h_s = rng.uniform(0.02, 0.08)
-        s_m = rng.uniform(0.25, 0.60)
-        s_s = rng.uniform(0.05, 0.15)
-        v_m = rng.uniform(0.35, 0.75)
-        v_s = rng.uniform(0.05, 0.18)
-
-        h_hist = np.zeros(6, dtype=np.float32)
-        h_hist[0] = 0.85; h_hist[1] = 0.15
-        s_hist = np.array([0.1, 0.5, 0.3, 0.1], dtype=np.float32)
-        v_hist = np.array([0.1, 0.3, 0.5, 0.1], dtype=np.float32)
-
-        mag_mean = rng.uniform(0.10, 0.30)
-        mag_std = rng.uniform(0.08, 0.25)
-        lap_var = rng.uniform(0.05, 0.25)
-
-        gr_ratio = rng.uniform(0.24, 0.35)
-        br_ratio = rng.uniform(0.20, 0.30)
-
-        valid_frac = rng.uniform(0.70, 1.0)
-        z_mean = rng.uniform(0.2, 0.8)
-        z_std = rng.uniform(0.02, 0.15)
-        dz_dx = rng.uniform(-0.15, 0.15)
-        dz_dy = rng.uniform(-0.25, 0.10)
-        plane_rough = z_std
-        height_proxy = rng.uniform(-0.10, 0.10)
-
-        feat = np.array([
-            h_m, h_s, s_m, s_s, v_m, v_s,
-            *h_hist, *s_hist, *v_hist,
-            mag_mean, mag_std, lap_var,
-            gr_ratio, br_ratio,
-            valid_frac, z_mean, z_std, dz_dx, dz_dy, plane_rough, height_proxy
-        ], dtype=np.float32)
-        X.append(feat)
-        y.append(CLASS_TRAVERSABLE)
-
-    # 2. OBSTACLE: boulders, rocks, debris, damaged structure rubble
-    # Texture: high edge energy, high roughness
-    # Depth: step jump in depth, large height_proxy, large z_std
-    for _ in range(per_class):
-        h_m = rng.uniform(0.05, 0.22)
-        h_s = rng.uniform(0.05, 0.20)
-        s_m = rng.uniform(0.10, 0.45)
-        s_s = rng.uniform(0.08, 0.25)
-        v_m = rng.uniform(0.20, 0.65)
-        v_s = rng.uniform(0.10, 0.30)
-
-        h_hist = rng.dirichlet(np.ones(6)).astype(np.float32)
-        s_hist = np.array([0.4, 0.3, 0.2, 0.1], dtype=np.float32)
-        v_hist = np.array([0.2, 0.4, 0.3, 0.1], dtype=np.float32)
-
-        mag_mean = rng.uniform(0.40, 0.90)
-        mag_std = rng.uniform(0.30, 0.80)
-        lap_var = rng.uniform(0.40, 1.20)
-
-        gr_ratio = rng.uniform(0.28, 0.36)
-        br_ratio = rng.uniform(0.26, 0.36)
-
-        valid_frac = rng.uniform(0.60, 1.0)
-        z_mean = rng.uniform(0.15, 0.7)
-        z_std = rng.uniform(0.35, 1.20)
-        dz_dx = rng.choice([-1, 1]) * rng.uniform(0.3, 1.2)
-        dz_dy = rng.uniform(0.3, 1.5)
-        plane_rough = z_std
-        height_proxy = rng.uniform(0.4, 1.5)
-
-        feat = np.array([
-            h_m, h_s, s_m, s_s, v_m, v_s,
-            *h_hist, *s_hist, *v_hist,
-            mag_mean, mag_std, lap_var,
-            gr_ratio, br_ratio,
-            valid_frac, z_mean, z_std, dz_dx, dz_dy, plane_rough, height_proxy
-        ], dtype=np.float32)
-        X.append(feat)
-        y.append(CLASS_OBSTACLE)
-
-    # 3. WATER_MUD: flood puddles, muddy water pools, slush
-    # Color: dark murky brown-blue or specular, low sat or dark
-    # Texture: extremely smooth (low edge, low lap_var)
-    # Depth: low valid_frac (specular surface) or uniform flat surface below bank
-    for _ in range(per_class):
-        h_m = rng.uniform(0.08, 0.30)
-        h_s = rng.uniform(0.01, 0.05)
-        s_m = rng.uniform(0.15, 0.50)
-        s_s = rng.uniform(0.02, 0.08)
-        v_m = rng.uniform(0.15, 0.45)
-        v_s = rng.uniform(0.02, 0.08)
-
-        h_hist = np.zeros(6, dtype=np.float32)
-        h_hist[0] = 0.3; h_hist[1] = 0.4; h_hist[2] = 0.3
-        s_hist = np.array([0.3, 0.5, 0.2, 0.0], dtype=np.float32)
-        v_hist = np.array([0.5, 0.4, 0.1, 0.0], dtype=np.float32)
-
-        mag_mean = rng.uniform(0.02, 0.12)
-        mag_std = rng.uniform(0.01, 0.08)
-        lap_var = rng.uniform(0.005, 0.06)
-
-        gr_ratio = rng.uniform(0.32, 0.40)
-        br_ratio = rng.uniform(0.35, 0.50)
-
-        valid_frac = rng.uniform(0.15, 0.65)  # water causes partial disparity dropouts
-        z_mean = rng.uniform(0.3, 0.9)
-        z_std = rng.uniform(0.01, 0.08)
-        dz_dx = rng.uniform(-0.05, 0.05)
-        dz_dy = rng.uniform(-0.05, 0.05)
-        plane_rough = z_std
-        height_proxy = rng.uniform(-0.4, -0.05)  # depression/channel
-
-        feat = np.array([
-            h_m, h_s, s_m, s_s, v_m, v_s,
-            *h_hist, *s_hist, *v_hist,
-            mag_mean, mag_std, lap_var,
-            gr_ratio, br_ratio,
-            valid_frac, z_mean, z_std, dz_dx, dz_dy, plane_rough, height_proxy
-        ], dtype=np.float32)
-        X.append(feat)
-        y.append(CLASS_WATER_MUD)
-
-    # 4. VEGETATION: shrubs, grass, trees, bushes
-    # Hue: green ~35-85 -> (0.20-0.45), high saturation, high gr_ratio
-    for _ in range(per_class):
-        h_m = rng.uniform(0.18, 0.45)
-        h_s = rng.uniform(0.02, 0.12)
-        s_m = rng.uniform(0.35, 0.90)
-        s_s = rng.uniform(0.05, 0.20)
-        v_m = rng.uniform(0.25, 0.75)
-        v_s = rng.uniform(0.05, 0.22)
-
-        h_hist = np.zeros(6, dtype=np.float32)
-        h_hist[1] = 0.50; h_hist[2] = 0.45; h_hist[3] = 0.05
-        s_hist = np.array([0.05, 0.25, 0.50, 0.20], dtype=np.float32)
-        v_hist = np.array([0.10, 0.35, 0.45, 0.10], dtype=np.float32)
-
-        mag_mean = rng.uniform(0.02, 0.65)
-        mag_std = rng.uniform(0.02, 0.55)
-        lap_var = rng.uniform(0.02, 0.85)
-
-        gr_ratio = rng.uniform(0.48, 1.0)
-        br_ratio = rng.uniform(0.10, 0.30)
-
-        valid_frac = rng.uniform(0.50, 0.90)
-        z_mean = rng.uniform(0.25, 0.8)
-        z_std = rng.uniform(0.15, 0.60)
-        dz_dx = rng.uniform(-0.3, 0.3)
-        dz_dy = rng.uniform(-0.1, 0.6)
-        plane_rough = z_std
-        height_proxy = rng.uniform(0.1, 0.8)
-
-        feat = np.array([
-            h_m, h_s, s_m, s_s, v_m, v_s,
-            *h_hist, *s_hist, *v_hist,
-            mag_mean, mag_std, lap_var,
-            gr_ratio, br_ratio,
-            valid_frac, z_mean, z_std, dz_dx, dz_dy, plane_rough, height_proxy
-        ], dtype=np.float32)
-        X.append(feat)
-        y.append(CLASS_VEGETATION)
-
-    X = np.array(X, dtype=np.float32)
-    y = np.array(y, dtype=np.int64)
-
-    # Add slight noise to avoid overfitting
-    noise = rng.normal(0, 0.02, X.shape).astype(np.float32)
-    X = np.clip(X + noise, -3.0, 3.0)
-
-    # Shuffle
-    idx = rng.permutation(len(X))
-    return X[idx], y[idx]
+def render_patch(label,rng,size=24):
+    yy,xx=np.indices((size,size),dtype=float)
+    z0=rng.uniform(.8,5)
+    # Rectified pinhole rays intersect a plane with a variable normal.
+    normal=np.array([rng.uniform(-.15,.15),rng.uniform(.05,.5),1.0])
+    if label==1:normal[:2]=rng.uniform(-.8,.8,2)
+    depth=(z0/(1+normal[0]*(xx-size/2)/100+normal[1]*(yy-size/2)/100)).astype(np.float32)
+    palettes=[(110,89,65),(115,115,110),(45,55,60),(50,140,45)]
+    color=np.array(palettes[label],float)*rng.uniform(.55,1.45)
+    color+=rng.normal(0,9,3)
+    energy=[rng.uniform(6,18),rng.uniform(12,32),rng.uniform(.3,2.5),rng.uniform(8,27)][label]
+    texture=rng.normal(0,energy,(size,size))
+    texture+=cv2.resize(rng.normal(0,energy,(4,4)).astype(np.float32),(size,size))
+    rgb=np.clip(color[None,None,:]+texture[:,:,None],0,255).astype(np.uint8)
+    if label==1 and rng.random()<.7:
+        rgb[:,size//2:]=np.clip(rgb[:,size//2:].astype(float)*.55,0,255).astype(np.uint8)
+        depth[:,size//2:]+=.4
+    if label==2:
+        depth[rng.random(depth.shape)<rng.uniform(.35,.9)]=np.nan
+    else:
+        depth+=rng.normal(0,.003,depth.shape).astype(np.float32)
+        depth[rng.random(depth.shape)<.02]=np.nan
+    return rgb,depth
 
 
-def train(weights_out=DEFAULT_WEIGHTS_PATH, epochs=30, lr=0.001, batch_size=64):
-    print("Generating synthetic multimodal perception dataset...")
-    X, y = generate_synthetic_dataset(num_samples=16000)
+def generate_synthetic_dataset(num_samples=6000,seed=26126):
+    rng=np.random.default_rng(seed);features=[];labels=[]
+    for i in range(num_samples):
+        label=i%4;rgb,depth=render_patch(label,rng)
+        features.append(extract_patch_features(rgb,depth));labels.append(label)
+    return np.asarray(features,np.float32),np.asarray(labels,np.int64)
 
-    split = int(0.85 * len(X))
-    X_train, y_train = X[:split], y[:split]
-    X_val, y_val = X[split:], y[split:]
 
-    in_dim = 32
-    h1 = 64
-    h2 = 32
-    out_dim = 4
-
-    rng = np.random.default_rng(42)
-    W1 = rng.normal(0, np.sqrt(2.0 / in_dim), (in_dim, h1)).astype(np.float32)
-    b1 = np.zeros(h1, dtype=np.float32)
-    W2 = rng.normal(0, np.sqrt(2.0 / h1), (h1, h2)).astype(np.float32)
-    b2 = np.zeros(h2, dtype=np.float32)
-    W3 = rng.normal(0, np.sqrt(2.0 / h2), (h2, out_dim)).astype(np.float32)
-    b3 = np.zeros(out_dim, dtype=np.float32)
-
-    # Momentum SGD with weight decay for clean, robust convergence
-    vW1, vb1 = np.zeros_like(W1), np.zeros_like(b1)
-    vW2, vb2 = np.zeros_like(W2), np.zeros_like(b2)
-    vW3, vb3 = np.zeros_like(W3), np.zeros_like(b3)
-    momentum = 0.9
-    weight_decay = 1e-4
-
-    N = len(X_train)
-    num_batches = N // batch_size
-
+def train(weights_out=DEFAULT_WEIGHTS_PATH,epochs=40,lr=.003,batch_size=128):
+    X,y=generate_synthetic_dataset(8000,26126)
+    V,vy=generate_synthetic_dataset(2000,926126)
+    mean=X.mean(0);scale=np.maximum(X.std(0),.05);X=(X-mean)/scale;V=(V-mean)/scale
+    model=PerceptionModel(weights_path=None);model.mean=mean;model.scale=scale
+    rng=np.random.default_rng(42)
+    names=['W1','b1','W2','b2','W3','b3'];velocity={k:np.zeros_like(getattr(model,k)) for k in names}
     for epoch in range(epochs):
-        perm = rng.permutation(N)
-        epoch_loss = 0.0
-
-        for b in range(num_batches):
-            b_idx = perm[b * batch_size:(b + 1) * batch_size]
-            xb = X_train[b_idx]
-            yb = y_train[b_idx]
-
-            # Forward
-            a1 = xb @ W1 + b1
-            h1_act = np.maximum(0.0, a1)
-
-            a2 = h1_act @ W2 + b2
-            h2_act = np.maximum(0.0, a2)
-
-            logits = h2_act @ W3 + b3
-            logits_max = np.max(logits, axis=1, keepdims=True)
-            exp_l = np.exp(logits - logits_max)
-            probs = exp_l / (np.sum(exp_l, axis=1, keepdims=True) + 1e-8)
-
-            # Cross entropy loss
-            loss = -np.mean(np.log(probs[np.arange(len(yb)), yb] + 1e-8))
-            epoch_loss += loss
-
-            # Backward
-            dlogits = probs.copy()
-            dlogits[np.arange(len(yb)), yb] -= 1.0
-            dlogits /= len(yb)
-
-            dW3 = h2_act.T @ dlogits + weight_decay * W3
-            db3 = np.sum(dlogits, axis=0)
-
-            dh2 = dlogits @ W3.T
-            da2 = dh2 * (a2 > 0)
-            dW2 = h1_act.T @ da2 + weight_decay * W2
-            db2 = np.sum(da2, axis=0)
-
-            dh1 = da2 @ W2.T
-            da1 = dh1 * (a1 > 0)
-            dW1 = xb.T @ da1 + weight_decay * W1
-            db1 = np.sum(da1, axis=0)
-
-            # Momentum updates
-            vW1 = momentum * vW1 - lr * dW1; W1 += vW1
-            vb1 = momentum * vb1 - lr * db1; b1 += vb1
-            vW2 = momentum * vW2 - lr * dW2; W2 += vW2
-            vb2 = momentum * vb2 - lr * db2; b2 += vb2
-            vW3 = momentum * vW3 - lr * dW3; W3 += vW3
-            vb3 = momentum * vb3 - lr * db3; b3 += vb3
-
-        if (epoch + 1) % 10 == 0 or epoch == epochs - 1:
-            # Evaluate val accuracy
-            z1 = np.maximum(0.0, X_val @ W1 + b1)
-            z2 = np.maximum(0.0, z1 @ W2 + b2)
-            val_logits = z2 @ W3 + b3
-            val_preds = np.argmax(val_logits, axis=1)
-            val_acc = np.mean(val_preds == y_val) * 100.0
-            print(f"Epoch {epoch+1:02d}/{epochs:02d} - Loss: {epoch_loss/num_batches:.4f} - Val Acc: {val_acc:.2f}%")
-
-    model = PerceptionModel(weights_path=None)
-    model.W1, model.b1 = W1, b1
-    model.W2, model.b2 = W2, b2
-    model.W3, model.b3 = W3, b3
+        for idx in np.array_split(rng.permutation(len(X)),int(np.ceil(len(X)/batch_size))):
+            x=X[idx];target=y[idx]
+            a1=x@model.W1+model.b1;h1=np.maximum(a1,0);a2=h1@model.W2+model.b2;h2=np.maximum(a2,0)
+            logits=h2@model.W3+model.b3;p=np.exp(logits-logits.max(1,keepdims=True));p/=p.sum(1,keepdims=True)
+            p[np.arange(len(idx)),target]-=1;p/=len(idx)
+            g3=h2.T@p;gb3=p.sum(0);d2=(p@model.W3.T)*(a2>0)
+            g2=h1.T@d2;gb2=d2.sum(0);d1=(d2@model.W2.T)*(a1>0)
+            gradients=[x.T@d1,d1.sum(0),g2,gb2,g3,gb3]
+            for name,grad in zip(names,gradients):
+                velocity[name]=.9*velocity[name]-lr*np.clip(grad,-5,5)
+                setattr(model,name,getattr(model,name)+velocity[name])
     model.save_weights(weights_out)
-    print(f"Saved optimized perception weights to: {weights_out}")
+    # Inference input is unnormalised, as in the online extractor.
+    Vraw=V*scale+mean;start=time.perf_counter();prob=model.forward(Vraw);latency=(time.perf_counter()-start)*1000
+    predictions=prob.argmax(1);cm=np.zeros((4,4),int);np.add.at(cm,(vy,predictions),1)
+    report={'training_samples':len(X),'held_out_samples':len(V),'train_scene_seed':26126,'held_out_scene_seed':926126,
+            'feature_count':40,'architecture':[40,64,32,4],'confusion_matrix_rows_true':cm.tolist(),
+            'held_out_accuracy':float((predictions==vy).mean()),'batch_inference_2000_ms':latency,
+            'scope':'Procedurally rendered RGB/depth material patches. Not real flood-water detection accuracy.',
+            'feature_extraction_included_in_latency':False}
+    Path(weights_out).with_suffix('.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2))
     return model
 
-
-if __name__ == "__main__":
-    train()
+if __name__=='__main__':train()

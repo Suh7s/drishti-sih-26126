@@ -1,29 +1,18 @@
-# Evidence status — DRISHTI 2.0
+# Evidence status
 
-## Verified Capabilities
+## Established baseline
 
-- **Lightweight Perception AI**:
-  - 40-feature multimodal classification (HSV color histograms, Sobel texture energy, depth variance, and normal gradients).
-  - 4-class semantic segmentation: `TRAVERSABLE`, `OBSTACLE`, `WATER_MUD`, `VEGETATION`.
-  - Sub-millisecond pure NumPy MLP inference; real-time traversability cost mapping.
-- **Visual SLAM**:
-  - Keyframe graph with spatial (0.4m) and angular (15°) baseline selection.
-  - Multi-scale ORB descriptor extraction and 3D world landmark mapping.
-  - Appearance-based loop closure detection via PnP RANSAC.
-  - Automatic visual relocalization recovery when tracking is lost.
-- **Rough Terrain & Dynamic Obstacle Navigation**:
-  - Local ground plane estimation via RANSAC on near-field 3D returns.
-  - Slope-aware traversability cost in A* planner (slope penalty up to 30°).
-  - Ditch, depression, and flood puddle hazard detection.
-  - Temporal obstacle decay and free-space clearing for dynamic obstacles.
-- **Nepal Flood Disaster Scene in Webots**:
-  - Procedural alluvial flood channel with mud deposits, gravel terraces, riverbed boulders, swept timber logs, and collapsed concrete ruins.
-  - Atmospheric Himalayan lighting and ground mist.
-- **Strict Verification & Sensor Honesty**:
-  - Controller receives RGB stereo pairs only (no ground truth cheat).
-  - Independent Webots Supervisor evaluator records ground truth position and computes clearance.
-  - 34 comprehensive tests pass with 100% success rate across all modules.
+`results/submission_run` records a successful flat, static forest course: 62.784 simulation seconds, 0.01205 m position RMSE and 0.37826 m conservative clearance. `demo/mission.mp4` contains this actual recorded run with synchronized sensor panels. These results predate the 2.0 integration.
 
-## Architecture Boundaries
+## 2.0 integration
 
-The stereo camera calibration and baseline are known. Hardware validation on physical micro-UGV remains future field deployment. Camera tracking quality is a multi-metric heuristic combining forward-backward KLT tracking consistency, PnP inlier count, and descriptor reprojection error.
+- 40 automated tests pass, including new regressions for stale-obstacle safety, steep-cell inflation, goal integrity, rigid pose corrections, landmark consistency and elevated ground-plane fitting.
+- The 40-feature MLP report is in `src/drishti/models/perception_weights.json`: 8,000 procedural image/depth training patches and 2,000 held-out patches; 99.5% held-out accuracy in that narrow synthetic domain.
+- The disaster world now contains a collision-enabled ElevationGrid, and evaluation consumes its generated hazard manifest.
+- The current disaster physics run is being evaluated. No successful rough-terrain mission is asserted until its independent measurements are archived here.
+
+## Not yet demonstrated
+
+Real flood deployment, mud traction, flowing water, rain/night robustness, generalization to real cameras, repeatable moving-obstacle avoidance and a successful full physics loop-closure route. Relocalization and pose-correction unit tests do not replace these experiments.
+
+The runtime is direct Python inside Webots. ROS 2 is not used. The robot is a wheeled rover; historical Spot/Isaac experiments are not the current submission demo.

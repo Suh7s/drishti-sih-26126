@@ -30,8 +30,8 @@ cal = Calibration(f,f,320,200,.16,640,400)
 goal = tuple(settings.get('goal', [10.0, 0.0]))
 nav = CameraNavigation(cal, goal=goal, initial_base_height=.13,
     mount=camera_mount(height=.62,forward=.29,left=.08,pitch_degrees=45),
-    config=Config(radius=.46,margin=.16,max_speed=.26,max_yaw_rate=.45,goal_tolerance=.40,
-                  support_max_age=float('inf') if settings.get('static_course', False) else 5.0,
+    config=Config(radius=.44,margin=.12,max_speed=.28,max_yaw_rate=.55,goal_tolerance=.45,
+                  support_max_age=float('inf'),
                   slope_weight=3.5, max_slope_rad=0.52))
 log = (out/'navigation.jsonl').open('w', buffering=1)
 video = cv2.VideoWriter(str(out/'perception.mp4'),cv2.VideoWriter_fourcc(*'mp4v'),1000/(step*3),(1280,400)) if settings.get('record') else None

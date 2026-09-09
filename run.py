@@ -15,9 +15,9 @@ def main():
     if args.command=="doctor":
         import platform
         print("Python:",sys.version,"\nOS:",platform.platform())
-        for name in ("numpy","cv2","isaacsim"):
+        for name in ("numpy","cv2"):
             print(name, "available" if importlib.util.find_spec(name) else "not available in this Python")
-        print("Isaac must run with its own Python launcher on the Ubuntu RTX machine.")
+        print("Use Webots R2025a for this Mac/Linux prototype; ROS 2 is not required.")
     elif args.command=="test":
         import unittest
         suite=unittest.defaultTestLoader.discover(str(ROOT/"tests"))
@@ -30,7 +30,7 @@ def main():
         import functools,http.server,webbrowser
         handler=functools.partial(http.server.SimpleHTTPRequestHandler,directory=str(ROOT/"demo"))
         with http.server.ThreadingHTTPServer(("127.0.0.1",8765),handler) as server:
-            print("Open http://127.0.0.1:8765 — local synthetic planning replay",flush=True)
+            print("Open http://127.0.0.1:8765 — recorded Webots baseline mission with synchronized evidence",flush=True)
             webbrowser.open("http://127.0.0.1:8765")
             try:server.serve_forever()
             except KeyboardInterrupt:pass

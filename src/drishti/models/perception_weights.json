@@ -1,0 +1,43 @@
+{
+  "training_samples": 8000,
+  "held_out_samples": 2000,
+  "train_scene_seed": 26126,
+  "held_out_scene_seed": 926126,
+  "feature_count": 40,
+  "architecture": [
+    40,
+    64,
+    32,
+    4
+  ],
+  "confusion_matrix_rows_true": [
+    [
+      494,
+      4,
+      0,
+      2
+    ],
+    [
+      4,
+      496,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      500,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      500
+    ]
+  ],
+  "held_out_accuracy": 0.995,
+  "batch_inference_2000_ms": 1.5107500075828284,
+  "scope": "Procedurally rendered RGB/depth material patches. Not real flood-water detection accuracy.",
+  "feature_extraction_included_in_latency": false
+}
