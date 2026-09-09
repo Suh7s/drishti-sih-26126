@@ -56,7 +56,7 @@ claiming that optional test passed.
 
 The final main movie has a visual overlay added by `visuals/package_demo.py`.
 Its source imagery and telemetry are from the same recorded run. The concluding
-card reports that run's measurements. `demo/build_demo.py` builds the offline
+card reports that run's measurements. `demo/index.html` provides the standalone offline
 viewer; `visuals/build_assets.py` regenerates the repository's trajectory graphics.
 
 ## Next research steps
